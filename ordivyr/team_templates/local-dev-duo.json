@@ -1,0 +1,112 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "local-dev-duo",
+  "title": "Local Dev Duo",
+  "tagline": "One planner, one coder - runs on a laptop.",
+  "description": "A planner breaks the task down and a coder implements it. Both run on local models, so it works offline with 8 GB of VRAM or CPU only.",
+  "tags": [
+    "local",
+    "coding",
+    "starter"
+  ],
+  "mission_hint": "Add input validation to the signup form and write tests.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 30
+  },
+  "events": [],
+  "shared_memory": [
+    "project"
+  ],
+  "departments": [],
+  "agents": [
+    {
+      "key": "planner",
+      "name": "Planner",
+      "role": "breaks work into steps",
+      "x": 100,
+      "y": 80,
+      "dept": null,
+      "instructions": "Plan the work in at most 5 numbered steps. Be specific about files. Do not write code.",
+      "tools": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [],
+        "role": "planner"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "skills": [
+          "research"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "coder",
+      "name": "Coder",
+      "role": "implements the plan",
+      "x": 380,
+      "y": 80,
+      "dept": null,
+      "instructions": "Implement the plan. Keep changes minimal and say how you verified them.",
+      "tools": [
+        "file_write"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "fast",
+        "suggest": [],
+        "role": "coder"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "skills": [
+          "coding"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    }
+  ],
+  "bridges": [
+    {
+      "from": "planner",
+      "to": "coder",
+      "kind": "both"
+    }
+  ],
+  "hardware": {
+    "min_vram_mb": 0,
+    "min_gpus": 0,
+    "local_only": true,
+    "needs_roles": [
+      "planner",
+      "coder"
+    ]
+  }
+}

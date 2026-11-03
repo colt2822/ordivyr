@@ -1,0 +1,579 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "crypto-research-team",
+  "title": "Crypto Research Team",
+  "tagline": "Research projects from every angle - research only.",
+  "description": "A lead, an on-chain analyst, a market and sentiment analyst, a tokenomics analyst, a risk sceptic and an editor. It researches and reports. It has no wallets, keys or trading tools and gives no financial advice.",
+  "tags": [
+    "crypto",
+    "research"
+  ],
+  "mission_hint": "Research Project X: team, token distribution, on-chain activity, market sentiment and the main risks. Produce a balanced brief.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 60,
+    "max_drex_calls": 3
+  },
+  "events": [],
+  "shared_memory": [
+    "project-notes"
+  ],
+  "departments": [
+    {
+      "key": "analysis",
+      "name": "Analysis desk",
+      "x": 30,
+      "y": 190,
+      "w": 760,
+      "h": 140,
+      "policy": {
+        "tools_deny": [],
+        "max_autonomy": "supervised"
+      }
+    }
+  ],
+  "agents": [
+    {
+      "key": "lead",
+      "name": "Research Lead",
+      "role": "Frames the question, owns the brief",
+      "x": 330,
+      "y": 20,
+      "dept": null,
+      "soul": "Balanced, evidence-first.",
+      "instructions": "Split the project into on-chain, market, tokenomics and risk questions. Research only: never recommend buying or selling.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Research goes to On-chain",
+          "if": {
+            "kind": "task_type",
+            "value": "research"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@onchain"
+          }
+        },
+        {
+          "name": "Review goes to Risk",
+          "if": {
+            "kind": "task_type",
+            "value": "qa"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@risk"
+          }
+        },
+        {
+          "name": "Nobody fits? Ask DREX",
+          "if": {
+            "kind": "no_worker"
+          },
+          "then": {
+            "kind": "ask_drex",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "onchain",
+      "name": "On-chain Analyst",
+      "role": "Reads public chain data",
+      "x": 60,
+      "y": 230,
+      "dept": "analysis",
+      "soul": "",
+      "instructions": "Use public block explorers and dashboards only. Report holders, flows and contract facts with links. Read-only; no wallet access.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser",
+        "http_api"
+      ],
+      "mcp": [
+        "fetch"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Send findings to Risk",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@risk"
+          }
+        }
+      ]
+    },
+    {
+      "key": "market",
+      "name": "Market & Sentiment Analyst",
+      "role": "Reads the room",
+      "x": 280,
+      "y": 230,
+      "dept": "analysis",
+      "soul": "",
+      "instructions": "Summarise price context, volume, news and community sentiment from public sources. Separate facts from opinions.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [
+        "brave_search"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Send findings to Risk",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@risk"
+          }
+        }
+      ]
+    },
+    {
+      "key": "tokenomics",
+      "name": "Tokenomics Analyst",
+      "role": "Supply, unlocks, incentives",
+      "x": 500,
+      "y": 230,
+      "dept": "analysis",
+      "soul": "",
+      "instructions": "Model supply, vesting and unlock schedules from official docs. Show your numbers and state assumptions.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser",
+        "code_exec",
+        "shell"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Send findings to Risk",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@risk"
+          }
+        }
+      ]
+    },
+    {
+      "key": "risk",
+      "name": "Risk Sceptic",
+      "role": "Argues the other side",
+      "x": 170,
+      "y": 430,
+      "dept": null,
+      "soul": "Devil's advocate.",
+      "instructions": "Find what could go wrong: audits, team history, concentration, regulatory risk. Rate each risk and cite evidence.",
+      "skills": [
+        "qa",
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Hand to Editor",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@editor"
+          }
+        },
+        {
+          "name": "Stuck twice? Escalate",
+          "if": {
+            "kind": "task_failed",
+            "count": 2
+          },
+          "then": {
+            "kind": "escalate",
+            "target": "manager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "editor",
+      "name": "Brief Editor",
+      "role": "Writes the balanced brief",
+      "x": 440,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Write a balanced brief: summary, evidence, risks, open questions, sources. End with 'Research only - not financial advice.' Save as brief.md.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project-notes"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Notify when ready",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "from": "lead",
+      "to": "onchain",
+      "kind": "both",
+      "note": "On-chain questions",
+      "color": "blue"
+    },
+    {
+      "from": "lead",
+      "to": "market",
+      "kind": "both",
+      "note": "Market questions",
+      "color": "blue"
+    },
+    {
+      "from": "lead",
+      "to": "tokenomics",
+      "kind": "both",
+      "note": "Token questions",
+      "color": "blue"
+    },
+    {
+      "from": "onchain",
+      "to": "risk",
+      "kind": "delegate",
+      "note": "Findings",
+      "color": "green",
+      "memory": "readwrite"
+    },
+    {
+      "from": "market",
+      "to": "risk",
+      "kind": "delegate",
+      "note": "Findings",
+      "color": "green",
+      "memory": "readwrite"
+    },
+    {
+      "from": "tokenomics",
+      "to": "risk",
+      "kind": "delegate",
+      "note": "Findings",
+      "color": "green",
+      "memory": "readwrite"
+    },
+    {
+      "from": "lead",
+      "to": "risk",
+      "kind": "delegate",
+      "note": "Challenge the findings",
+      "color": "red"
+    },
+    {
+      "from": "risk",
+      "to": "editor",
+      "kind": "delegate",
+      "note": "Risk-rated evidence",
+      "color": "orange",
+      "memory": "read"
+    },
+    {
+      "from": "editor",
+      "to": "lead",
+      "kind": "report",
+      "note": "Draft brief",
+      "color": "ink"
+    }
+  ]
+}

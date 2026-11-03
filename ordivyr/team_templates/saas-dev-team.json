@@ -1,0 +1,610 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "saas-dev-team",
+  "title": "SaaS Development Team",
+  "tagline": "Ship features from spec to release.",
+  "description": "A product lead who plans, an architect, front-end and back-end builders, a QA engineer and a release manager. Nothing ships without QA and your sign-off.",
+  "tags": [
+    "software",
+    "product"
+  ],
+  "mission_hint": "Build and ship: a password-reset flow with email verification.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 50,
+    "max_drex_calls": 3
+  },
+  "events": [
+    "release-approved"
+  ],
+  "shared_memory": [
+    "product-spec"
+  ],
+  "departments": [
+    {
+      "key": "eng",
+      "name": "Engineering",
+      "x": 40,
+      "y": 190,
+      "w": 760,
+      "h": 340,
+      "policy": {
+        "max_autonomy": "supervised"
+      }
+    }
+  ],
+  "agents": [
+    {
+      "key": "lead",
+      "name": "Product Lead",
+      "role": "Plans the work and routes it",
+      "x": 330,
+      "y": 20,
+      "dept": null,
+      "soul": "Calm, decisive, plain-spoken.",
+      "instructions": "Turn the mission into small tickets. Route each ticket to the right builder. Never write code yourself. Summarise progress.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "product-spec"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Code goes to Backend",
+          "if": {
+            "kind": "task_type",
+            "value": "coding"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@backend"
+          }
+        },
+        {
+          "name": "Research goes to Architect",
+          "if": {
+            "kind": "task_type",
+            "value": "research"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@architect"
+          }
+        },
+        {
+          "name": "Reviews go to QA",
+          "if": {
+            "kind": "task_type",
+            "value": "qa"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@qa"
+          }
+        },
+        {
+          "name": "Nobody fits? Ask DREX",
+          "if": {
+            "kind": "no_worker"
+          },
+          "then": {
+            "kind": "ask_drex",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "architect",
+      "name": "Architect",
+      "role": "Designs the approach",
+      "x": 80,
+      "y": 230,
+      "dept": "eng",
+      "soul": "Careful and economical.",
+      "instructions": "Write a short design: data model, endpoints, risks. Keep it under one page. Record decisions in shared memory.",
+      "skills": [
+        "research",
+        "coding"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [
+        "github"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "product-spec"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": []
+    },
+    {
+      "key": "frontend",
+      "name": "Frontend Dev",
+      "role": "Builds the UI",
+      "x": 300,
+      "y": 230,
+      "dept": "eng",
+      "soul": "",
+      "instructions": "Implement UI changes with tests. Keep edits small and reviewable.",
+      "skills": [
+        "coding"
+      ],
+      "tools": [
+        "shell",
+        "file_write",
+        "code_exec"
+      ],
+      "mcp": [
+        "github"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 600,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "product-spec"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Hand finished work to QA",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@qa"
+          }
+        },
+        {
+          "name": "Stuck twice? Escalate",
+          "if": {
+            "kind": "task_failed",
+            "count": 2
+          },
+          "then": {
+            "kind": "escalate",
+            "target": "manager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "backend",
+      "name": "Backend Dev",
+      "role": "Builds APIs and data",
+      "x": 520,
+      "y": 230,
+      "dept": "eng",
+      "soul": "",
+      "instructions": "Implement endpoints and migrations with tests. Never touch production data.",
+      "skills": [
+        "coding"
+      ],
+      "tools": [
+        "shell",
+        "file_write",
+        "code_exec"
+      ],
+      "mcp": [
+        "github"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 600,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "product-spec"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Stop paid use at budget",
+          "if": {
+            "kind": "budget",
+            "metric": "tokens",
+            "pct": 100
+          },
+          "then": {
+            "kind": "stop_paid",
+            "target": ""
+          }
+        },
+        {
+          "name": "Hand finished work to QA",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@qa"
+          }
+        },
+        {
+          "name": "Stuck twice? Escalate",
+          "if": {
+            "kind": "task_failed",
+            "count": 2
+          },
+          "then": {
+            "kind": "escalate",
+            "target": "manager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "qa",
+      "name": "QA Engineer",
+      "role": "Verifies everything",
+      "x": 300,
+      "y": 430,
+      "dept": "eng",
+      "soul": "Sceptical by default.",
+      "instructions": "Run the tests, try to break the change, and reject anything unverified. Report exactly what you ran.",
+      "skills": [
+        "qa"
+      ],
+      "tools": [
+        "shell"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "product-spec"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Passed? Hand to Release",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@release"
+          }
+        }
+      ]
+    },
+    {
+      "key": "release",
+      "name": "Release Manager",
+      "role": "Cuts the release (needs you)",
+      "x": 560,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Prepare release notes and the changelog. Do NOT deploy; wait for the approved 'release-approved' event.",
+      "skills": [
+        "coding"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [
+        "github"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "manual",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Only on your approval",
+          "if": {
+            "kind": "custom_event",
+            "name": "release-approved"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "from": "lead",
+      "to": "architect",
+      "kind": "both",
+      "note": "Spec & questions",
+      "color": "blue"
+    },
+    {
+      "from": "lead",
+      "to": "frontend",
+      "kind": "delegate",
+      "note": "Tickets",
+      "color": "ink"
+    },
+    {
+      "from": "lead",
+      "to": "backend",
+      "kind": "both",
+      "note": "Tickets & status",
+      "color": "ink"
+    },
+    {
+      "from": "architect",
+      "to": "frontend",
+      "kind": "delegate",
+      "note": "Design",
+      "color": "purple",
+      "memory": "read"
+    },
+    {
+      "from": "architect",
+      "to": "backend",
+      "kind": "delegate",
+      "note": "Design",
+      "color": "purple",
+      "memory": "read"
+    },
+    {
+      "from": "frontend",
+      "to": "qa",
+      "kind": "delegate",
+      "note": "Please verify",
+      "color": "green"
+    },
+    {
+      "from": "backend",
+      "to": "qa",
+      "kind": "delegate",
+      "note": "Please verify",
+      "color": "green"
+    },
+    {
+      "from": "qa",
+      "to": "release",
+      "kind": "delegate",
+      "note": "Verified build",
+      "color": "orange",
+      "approval": true
+    },
+    {
+      "from": "lead",
+      "to": "qa",
+      "kind": "delegate",
+      "note": "Review requests",
+      "color": "ink"
+    }
+  ]
+}

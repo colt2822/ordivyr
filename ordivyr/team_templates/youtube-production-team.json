@@ -1,0 +1,520 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "youtube-production-team",
+  "title": "YouTube Production Team",
+  "tagline": "From idea to upload-ready package.",
+  "description": "An executive producer, a topic scout, a scriptwriter, a title and thumbnail strategist, an edit planner and a publishing checker. Nothing is uploaded; you publish.",
+  "tags": [
+    "video",
+    "content"
+  ],
+  "mission_hint": "Plan next week's video: 'How solar chargers actually work' - topic, script, titles, thumbnail ideas and edit plan.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 50,
+    "max_drex_calls": 3
+  },
+  "events": [],
+  "shared_memory": [
+    "channel-brand"
+  ],
+  "departments": [],
+  "agents": [
+    {
+      "key": "producer",
+      "name": "Executive Producer",
+      "role": "Owns the video from idea to package",
+      "x": 330,
+      "y": 20,
+      "dept": null,
+      "soul": "Energetic, audience-first.",
+      "instructions": "Decide the angle, then route scouting, scripting, packaging and the edit plan. Keep the channel voice consistent.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Research goes to Topic Scout",
+          "if": {
+            "kind": "task_type",
+            "value": "research"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@scout"
+          }
+        },
+        {
+          "name": "Media goes to Scriptwriter",
+          "if": {
+            "kind": "task_type",
+            "value": "media"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@writer"
+          }
+        },
+        {
+          "name": "Nobody fits? Ask DREX",
+          "if": {
+            "kind": "no_worker"
+          },
+          "then": {
+            "kind": "ask_drex",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "scout",
+      "name": "Topic Scout",
+      "role": "Finds what viewers want",
+      "x": 80,
+      "y": 230,
+      "dept": null,
+      "soul": "",
+      "instructions": "Find 5 timely topics with evidence of demand. For each give one hook line and the likely audience.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [
+        "brave_search"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Tell the Producer when ideas are ready",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "writer",
+      "name": "Scriptwriter",
+      "role": "Writes the script",
+      "x": 300,
+      "y": 230,
+      "dept": null,
+      "soul": "Conversational, vivid.",
+      "instructions": "Write a spoken-word script with a hook in the first 15 seconds, clear sections, and a call to action. Mark B-roll cues in [brackets].",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Hand the script to Packaging",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@packager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "packager",
+      "name": "Title & Thumbnail Strategist",
+      "role": "Packages the idea",
+      "x": 520,
+      "y": 230,
+      "dept": null,
+      "soul": "Punchy.",
+      "instructions": "Offer 8 title options and 3 thumbnail concepts (describe the image; do not generate). Explain why each could work.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Hand to Edit Planner",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@editor"
+          }
+        }
+      ]
+    },
+    {
+      "key": "editor",
+      "name": "Edit Planner",
+      "role": "Plans the cut",
+      "x": 190,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Turn the script into a shot list and edit plan: timestamps, B-roll, music mood, captions. Save as edit-plan.md.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Hand to Publish Checker",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@checker"
+          }
+        }
+      ]
+    },
+    {
+      "key": "checker",
+      "name": "Publish Checker",
+      "role": "Pre-flight before you upload",
+      "x": 430,
+      "y": 430,
+      "dept": null,
+      "soul": "Careful.",
+      "instructions": "Check the package against the brand notes: claims sourced, no copyrighted material assumed, titles honest. List fixes. You never upload.",
+      "skills": [
+        "qa"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "channel-brand"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "manual",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Tell me when it is ready",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "from": "producer",
+      "to": "scout",
+      "kind": "both",
+      "note": "Topic brief",
+      "color": "blue"
+    },
+    {
+      "from": "producer",
+      "to": "writer",
+      "kind": "both",
+      "note": "Approved angle",
+      "color": "ink"
+    },
+    {
+      "from": "scout",
+      "to": "producer",
+      "kind": "report",
+      "note": "Ideas",
+      "color": "green"
+    },
+    {
+      "from": "writer",
+      "to": "packager",
+      "kind": "delegate",
+      "note": "Script",
+      "color": "orange",
+      "memory": "read"
+    },
+    {
+      "from": "packager",
+      "to": "editor",
+      "kind": "delegate",
+      "note": "Final title + visuals",
+      "color": "orange"
+    },
+    {
+      "from": "editor",
+      "to": "checker",
+      "kind": "delegate",
+      "note": "Edit plan",
+      "color": "purple",
+      "approval": true
+    }
+  ]
+}

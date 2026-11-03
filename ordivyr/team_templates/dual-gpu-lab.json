@@ -1,0 +1,196 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "dual-gpu-lab",
+  "title": "Dual-GPU Lab",
+  "tagline": "Big reasoner on one card, fast workers on the other.",
+  "description": "Uses two GPUs at once: a large planner/reviewer on the big card and a coder plus an embedder-backed memory on the second. Needs 2+ GPUs or one 24 GB card.",
+  "tags": [
+    "local",
+    "coding",
+    "multi-gpu"
+  ],
+  "mission_hint": "Investigate why the nightly import job is slow, propose a fix, implement it and verify.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 30
+  },
+  "events": [],
+  "shared_memory": [
+    "project"
+  ],
+  "departments": [],
+  "agents": [
+    {
+      "key": "planner",
+      "name": "Planner",
+      "role": "reasoning lead",
+      "x": 60,
+      "y": 60,
+      "dept": null,
+      "instructions": "Reason about root causes first, then plan. Ask for evidence before concluding.",
+      "tools": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [],
+        "role": "planner"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "skills": [
+          "research"
+        ],
+        "gpu": true,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "coder",
+      "name": "Coder",
+      "role": "fast implementer",
+      "x": 340,
+      "y": 60,
+      "dept": null,
+      "instructions": "Implement the fix. Keep a short log of commands you ran.",
+      "tools": [
+        "file_write",
+        "shell"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [],
+        "role": "coder"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "skills": [
+          "coding"
+        ],
+        "gpu": true,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "reviewer",
+      "name": "Reviewer",
+      "role": "second opinion",
+      "x": 620,
+      "y": 60,
+      "dept": null,
+      "instructions": "Challenge the fix: what could break? Request a test for each risk.",
+      "tools": [
+        "shell"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [],
+        "role": "reviewer"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "skills": [
+          "qa"
+        ],
+        "gpu": true,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "scribe",
+      "name": "Scribe",
+      "role": "memory keeper",
+      "x": 340,
+      "y": 260,
+      "dept": null,
+      "instructions": "Record decisions and evidence in shared memory for the next session.",
+      "tools": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [],
+        "role": "summarizer"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "skills": [
+          "research"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    }
+  ],
+  "bridges": [
+    {
+      "from": "planner",
+      "to": "coder",
+      "kind": "delegate"
+    },
+    {
+      "from": "coder",
+      "to": "reviewer",
+      "kind": "delegate"
+    },
+    {
+      "from": "reviewer",
+      "to": "scribe",
+      "kind": "report"
+    }
+  ],
+  "hardware": {
+    "min_vram_mb": 22000,
+    "min_gpus": 2,
+    "local_only": true,
+    "needs_roles": [
+      "planner",
+      "coder",
+      "reviewer"
+    ]
+  }
+}

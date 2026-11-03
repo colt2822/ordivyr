@@ -1,0 +1,482 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "research-department",
+  "title": "Research Department",
+  "tagline": "Find it, check it, write it up.",
+  "description": "A director fans questions out to web researchers (who can spawn helpers), a fact-checker keeps everyone honest, and an analyst and writer turn findings into a cited report.",
+  "tags": [
+    "research",
+    "analysis"
+  ],
+  "mission_hint": "Research the market for portable solar chargers and write a 2-page brief with sources.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 60,
+    "max_drex_calls": 3
+  },
+  "events": [],
+  "shared_memory": [
+    "findings"
+  ],
+  "departments": [],
+  "agents": [
+    {
+      "key": "director",
+      "name": "Research Director",
+      "role": "Frames questions, owns the answer",
+      "x": 330,
+      "y": 20,
+      "dept": null,
+      "soul": "Curious and rigorous.",
+      "instructions": "Break the question into 3-5 sub-questions. Assign them. Combine the answers; flag disagreements.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "findings"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Research goes to Web Researcher",
+          "if": {
+            "kind": "task_type",
+            "value": "research"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@web"
+          }
+        },
+        {
+          "name": "Review goes to Fact-Checker",
+          "if": {
+            "kind": "task_type",
+            "value": "qa"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@checker"
+          }
+        },
+        {
+          "name": "Nobody fits? Ask DREX",
+          "if": {
+            "kind": "no_worker"
+          },
+          "then": {
+            "kind": "ask_drex",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "web",
+      "name": "Web Researcher",
+      "role": "Searches and reads sources",
+      "x": 80,
+      "y": 230,
+      "dept": null,
+      "soul": "",
+      "instructions": "Find primary sources. Quote sparingly, cite every claim with a URL, and say when evidence is thin.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser",
+        "http_api"
+      ],
+      "mcp": [
+        "fetch",
+        "brave_search"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 40000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 3,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "findings"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Spawn a helper for big topics",
+          "if": {
+            "kind": "budget",
+            "metric": "tokens",
+            "pct": 60
+          },
+          "then": {
+            "kind": "spawn_subagent",
+            "target": ""
+          }
+        },
+        {
+          "name": "Send findings to the Fact-Checker",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@checker"
+          }
+        }
+      ]
+    },
+    {
+      "key": "checker",
+      "name": "Fact-Checker",
+      "role": "Verifies claims and sources",
+      "x": 300,
+      "y": 230,
+      "dept": null,
+      "soul": "Sceptical, never rude.",
+      "instructions": "Re-check each claim against its source. Mark every claim verified, disputed or unsupported.",
+      "skills": [
+        "qa",
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [
+        "fetch"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "findings"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Verified? Hand to Analyst",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@analyst"
+          }
+        },
+        {
+          "name": "Stuck twice? Escalate",
+          "if": {
+            "kind": "task_failed",
+            "count": 2
+          },
+          "then": {
+            "kind": "escalate",
+            "target": "manager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "analyst",
+      "name": "Analyst",
+      "role": "Finds the pattern",
+      "x": 520,
+      "y": 230,
+      "dept": null,
+      "soul": "",
+      "instructions": "Compare verified findings, compute simple numbers, and state what the evidence does and does not show.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "code_exec",
+        "shell"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "findings"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Send analysis to the Writer",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "send_to",
+            "target": "@writer"
+          }
+        }
+      ]
+    },
+    {
+      "key": "writer",
+      "name": "Report Writer",
+      "role": "Writes the cited brief",
+      "x": 410,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Write a clear brief with headings, a short summary first, and numbered source links. Save it as report.md.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "findings"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Notify when the report is done",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "from": "director",
+      "to": "web",
+      "kind": "both",
+      "note": "Questions",
+      "color": "blue"
+    },
+    {
+      "from": "web",
+      "to": "checker",
+      "kind": "delegate",
+      "note": "Claims to verify",
+      "color": "green",
+      "memory": "readwrite"
+    },
+    {
+      "from": "director",
+      "to": "checker",
+      "kind": "delegate",
+      "note": "Spot checks",
+      "color": "ink"
+    },
+    {
+      "from": "checker",
+      "to": "analyst",
+      "kind": "delegate",
+      "note": "Verified facts",
+      "color": "purple",
+      "memory": "read"
+    },
+    {
+      "from": "analyst",
+      "to": "writer",
+      "kind": "delegate",
+      "note": "Analysis",
+      "color": "orange",
+      "memory": "read"
+    },
+    {
+      "from": "writer",
+      "to": "director",
+      "kind": "report",
+      "note": "Draft for sign-off",
+      "color": "ink"
+    }
+  ]
+}

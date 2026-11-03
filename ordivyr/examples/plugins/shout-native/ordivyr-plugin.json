@@ -1,0 +1,11 @@
+{
+  "schema": "ordivyr-plugin/1",
+  "id": "shout",
+  "name": "Shout (example native plugin)",
+  "version": "0.1.0",
+  "runtime": "native",
+  "entry": {"module": "main.py"},
+  "description": "Adds one read-only tool that upper-cases text. Shows the native extension API.",
+  "license": "Apache-2.0",
+  "permissions": []
+}

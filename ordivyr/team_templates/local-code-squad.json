@@ -1,0 +1,197 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "local-code-squad",
+  "title": "Local Code Squad",
+  "tagline": "Plan, build, review, summarise - all on your GPU.",
+  "description": "Planner, coder, an independent reviewer on a different model, and a summariser. Needs a card with roughly 16 GB or a larger model split across GPUs.",
+  "tags": [
+    "local",
+    "coding",
+    "review"
+  ],
+  "mission_hint": "Refactor the billing module to remove the duplicated tax calculation and keep tests green.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 30
+  },
+  "events": [],
+  "shared_memory": [
+    "project"
+  ],
+  "departments": [],
+  "agents": [
+    {
+      "key": "planner",
+      "name": "Planner",
+      "role": "decomposes the mission",
+      "x": 60,
+      "y": 60,
+      "dept": null,
+      "instructions": "Decompose the mission. Output numbered steps with acceptance checks.",
+      "tools": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [],
+        "role": "planner"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "skills": [
+          "research"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "coder",
+      "name": "Coder",
+      "role": "writes the change",
+      "x": 340,
+      "y": 60,
+      "dept": null,
+      "instructions": "Implement exactly the plan. Show the diff summary.",
+      "tools": [
+        "file_write",
+        "shell"
+      ],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "strong",
+        "suggest": [],
+        "role": "coder"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "skills": [
+          "coding"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "reviewer",
+      "name": "Reviewer",
+      "role": "independent check",
+      "x": 620,
+      "y": 60,
+      "dept": null,
+      "instructions": "Review the coder's output against the acceptance checks. Reject anything unverified.",
+      "tools": [
+        "shell"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [],
+        "role": "reviewer"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "skills": [
+          "qa"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    },
+    {
+      "key": "summarizer",
+      "name": "Summariser",
+      "role": "writes the report",
+      "x": 340,
+      "y": 260,
+      "dept": null,
+      "instructions": "Summarise what changed, what was verified and what remains.",
+      "tools": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [],
+        "role": "summarizer"
+      },
+      "limits": {
+        "token_budget": 60000,
+        "max_seconds": 600
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "project"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "skills": [
+          "research"
+        ],
+        "gpu": false,
+        "autonomy": "supervised",
+        "paid_allowed": false
+      }
+    }
+  ],
+  "bridges": [
+    {
+      "from": "planner",
+      "to": "coder",
+      "kind": "delegate"
+    },
+    {
+      "from": "coder",
+      "to": "reviewer",
+      "kind": "delegate"
+    },
+    {
+      "from": "reviewer",
+      "to": "summarizer",
+      "kind": "report"
+    }
+  ],
+  "hardware": {
+    "min_vram_mb": 14000,
+    "min_gpus": 0,
+    "local_only": true,
+    "needs_roles": [
+      "planner",
+      "coder",
+      "reviewer",
+      "summarizer"
+    ]
+  }
+}

@@ -1,0 +1,529 @@
+{
+  "schema": "ordivyr-template/1",
+  "key": "business-operations-team",
+  "title": "Business Operations Team",
+  "tagline": "Keep the small business running.",
+  "description": "An operations lead with an inbox and calendar assistant, a bookkeeper, a support agent, a sales-outreach drafter and a weekly reporter. Customer-facing agents can only draft; you press send.",
+  "tags": [
+    "business",
+    "operations"
+  ],
+  "mission_hint": "Run this week: triage the inbox, reconcile expenses, draft replies to open support tickets and write the weekly report.",
+  "settings": {
+    "max_depth": 3,
+    "max_actions": 50,
+    "max_drex_calls": 3
+  },
+  "events": [],
+  "shared_memory": [
+    "business-facts"
+  ],
+  "departments": [
+    {
+      "key": "front",
+      "name": "Customer-facing",
+      "x": 30,
+      "y": 190,
+      "w": 760,
+      "h": 140,
+      "policy": {
+        "tools_deny": [
+          "shell",
+          "code_exec"
+        ],
+        "max_autonomy": "supervised",
+        "paid_allowed": false
+      }
+    }
+  ],
+  "agents": [
+    {
+      "key": "ops",
+      "name": "Operations Lead",
+      "role": "Runs the week",
+      "x": 330,
+      "y": 20,
+      "dept": null,
+      "soul": "Organised, brief.",
+      "instructions": "Break the week into tasks, assign them, and produce a one-page status. Escalate anything involving money or customers to the human.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "strong",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 60000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 400,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "readwrite"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": true
+      },
+      "gambits": [
+        {
+          "name": "Outreach goes to Sales",
+          "if": {
+            "kind": "task_type",
+            "value": "outreach"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@sales"
+          }
+        },
+        {
+          "name": "Research goes to Reporter",
+          "if": {
+            "kind": "task_type",
+            "value": "research"
+          },
+          "then": {
+            "kind": "delegate",
+            "target": "@reporter"
+          }
+        },
+        {
+          "name": "Nobody fits? Ask DREX",
+          "if": {
+            "kind": "no_worker"
+          },
+          "then": {
+            "kind": "ask_drex",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "assistant",
+      "name": "Inbox & Calendar Assistant",
+      "role": "Triage and scheduling",
+      "x": 60,
+      "y": 230,
+      "dept": "front",
+      "soul": "",
+      "instructions": "Sort messages into urgent / reply / ignore. Suggest meeting times. Draft replies; never send.",
+      "skills": [
+        "outreach"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [
+        "slack",
+        "calendar"
+      ],
+      "permissions": "read-only",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Flag when triage is done",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "support",
+      "name": "Customer Support",
+      "role": "Answers customers (drafts)",
+      "x": 280,
+      "y": 230,
+      "dept": "front",
+      "soul": "",
+      "instructions": "Draft friendly, accurate replies from the knowledge in shared memory. If unsure, say so and escalate.",
+      "skills": [
+        "outreach"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Unsure twice? Escalate",
+          "if": {
+            "kind": "task_failed",
+            "count": 2
+          },
+          "then": {
+            "kind": "escalate",
+            "target": "manager"
+          }
+        }
+      ]
+    },
+    {
+      "key": "sales",
+      "name": "Sales Outreach",
+      "role": "Drafts prospect emails",
+      "x": 500,
+      "y": 230,
+      "dept": "front",
+      "soul": "",
+      "instructions": "Draft short, honest outreach for the leads provided. Personalise from public info. Never send; never invent facts.",
+      "skills": [
+        "outreach"
+      ],
+      "tools": [
+        "browser"
+      ],
+      "mcp": [],
+      "permissions": "read-only",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Flag when drafts await approval",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    },
+    {
+      "key": "books",
+      "name": "Bookkeeper",
+      "role": "Tracks expenses (read-only)",
+      "x": 170,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Categorise the expenses you are given and flag anomalies. You cannot move money or contact anyone.",
+      "skills": [
+        "research"
+      ],
+      "tools": [
+        "code_exec",
+        "shell"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "balanced",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          {
+            "provider": "claude",
+            "model": ""
+          },
+          {
+            "provider": "codex",
+            "model": ""
+          },
+          {
+            "provider": "openai",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 40000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": true,
+        "max": 2,
+        "limits": {
+          "token_budget": 10000,
+          "spend_cap_usd": 0.0,
+          "max_seconds": 120,
+          "concurrency": 1
+        }
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": []
+    },
+    {
+      "key": "reporter",
+      "name": "Weekly Reporter",
+      "role": "Writes the weekly report",
+      "x": 440,
+      "y": 430,
+      "dept": null,
+      "soul": "",
+      "instructions": "Combine the week's outputs into a clear one-page report: wins, risks, numbers, next steps. Save as weekly-report.md.",
+      "skills": [
+        "media"
+      ],
+      "tools": [
+        "file_write"
+      ],
+      "mcp": [],
+      "permissions": "workspace-write",
+      "model": {
+        "tier": "fast",
+        "suggest": [
+          {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "provider": "groq",
+            "model": ""
+          },
+          {
+            "provider": "ollama",
+            "model": ""
+          }
+        ]
+      },
+      "limits": {
+        "token_budget": 50000,
+        "spend_cap_usd": 0.0,
+        "max_seconds": 300,
+        "concurrency": 1
+      },
+      "subagents": {
+        "enabled": false,
+        "max": 0
+      },
+      "memory": {
+        "private": true,
+        "shared": [
+          "business-facts"
+        ],
+        "mode": "read"
+      },
+      "license": {
+        "autonomy": "supervised",
+        "paid_allowed": false
+      },
+      "gambits": [
+        {
+          "name": "Notify when ready",
+          "if": {
+            "kind": "task_completed"
+          },
+          "then": {
+            "kind": "notify",
+            "target": ""
+          }
+        }
+      ]
+    }
+  ],
+  "bridges": [
+    {
+      "from": "ops",
+      "to": "assistant",
+      "kind": "both",
+      "note": "Daily triage",
+      "color": "blue"
+    },
+    {
+      "from": "ops",
+      "to": "support",
+      "kind": "both",
+      "note": "Open tickets",
+      "color": "blue"
+    },
+    {
+      "from": "ops",
+      "to": "sales",
+      "kind": "both",
+      "note": "Lead list",
+      "color": "blue",
+      "approval": true
+    },
+    {
+      "from": "ops",
+      "to": "books",
+      "kind": "delegate",
+      "note": "Expenses",
+      "color": "green"
+    },
+    {
+      "from": "books",
+      "to": "reporter",
+      "kind": "delegate",
+      "note": "Numbers",
+      "color": "purple",
+      "memory": "read"
+    },
+    {
+      "from": "ops",
+      "to": "reporter",
+      "kind": "delegate",
+      "note": "Weekly summary",
+      "color": "orange"
+    }
+  ]
+}
