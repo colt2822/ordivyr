@@ -1,6 +1,6 @@
 # ORDIVYR
 
-**Genesis Protocol** - open multi-agent orchestration core (Apache-2.0, Python >= 3.10, standard library only).
+**ORDIVYR Board** - open-source multi-agent orchestration: durable queue, BYO-key spending budgets, local-GPU management (Apache-2.0, Python >= 3.11).
 
 * **Boards** of agents with **License trees** (what each agent may do, with department policy inheritance) and **Gambits** (deterministic IF -> THEN rules).
 * **BYOK** providers (Anthropic, OpenAI-compatible, Gemini, Ollama, LM Studio, ...) with a bounded tool loop; paid runs are denied unless explicitly allowed *and* approved.
@@ -12,7 +12,7 @@
 * **Bridges**: DREX (bounded-decision model, off until you configure it) and JEV Fleet Command (task/approval register).
 
 ```
-pip install .            # or run from a checkout: ./bin/ordivyr
+pip install .            # or the wheel from the GitHub Release; or run from a checkout: ./bin/ordivyr
 ordivyr doctor
 ordivyr hw
 ordivyr templates        # which teams can this machine run?

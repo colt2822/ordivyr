@@ -29,8 +29,8 @@ class Model:
     def to_dict(self): return {"name": self.name, "backend": self.backend, "size_mb": self.size_mb, "params_b": self.params_b, "quant": self.quant, "loaded": self.loaded, "need_mb": self.need_mb()}
 
 
-def _urlopen(method, url, body, timeout):
-    req = urllib.request.Request(url, data=body, method=method, headers={"Content-Type": "application/json", "User-Agent": "ordivyr"})
+def _urlopen(method, url, body, timeout, key=""):
+    req = urllib.request.Request(url, data=body, method=method, headers={"Content-Type": "application/json", "User-Agent": "ordivyr", **({"Authorization": "Bearer " + key} if key else {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r: return r.status, r.read()
     except urllib.error.HTTPError as e: return e.code, e.read()
@@ -45,8 +45,8 @@ def _check(base):
 
 
 class _Base:
-    def __init__(self, base, http=None, timeout=60, name=None):
-        self.base = _check(base); self._http = http or _urlopen; self.timeout = timeout; self.name = name or self.kind
+    def __init__(self, base, http=None, timeout=60, name=None, key=""):
+        self.base = _check(base); self.key = key or ""; self._http = http or ((lambda m, u, b, t: _urlopen(m, u, b, t, self.key)) if self.key else _urlopen); self.timeout = timeout; self.name = name or self.kind
     def _j(self, method, path, payload=None, timeout=None):
         st, raw = self._http(method, self.base + path, None if payload is None else json.dumps(payload).encode(), timeout or self.timeout)
         try: j = json.loads(raw or b"{}")

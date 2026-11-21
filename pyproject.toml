@@ -1,29 +1,39 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ordivyr"
-version = "0.4.0a0"
-description = "Open multi-agent orchestration core: License trees, Gambits, BYOK, local-LLM/GPU management, plugins (MCP, A2A, n8n, LangGraph, skills)"
+version = "0.5.0"
+description = "Open-source multi-agent Board: durable queue, BYO-key spending budgets, local-LLM/GPU management, plugins (MCP, A2A, n8n, LangGraph, skills)"
 readme = "README.md"
 authors = [{ name = "ELYREON" }]
-requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-dependencies = []
-classifiers = ["Development Status :: 3 - Alpha", "License :: OSI Approved :: Apache Software License", "Programming Language :: Python :: 3", "Operating System :: POSIX :: Linux"]
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["agents", "orchestration", "multi-agent", "llm", "mcp", "self-hosted"]
+dependencies = ["cryptography>=50.0.2"]
+classifiers = ["Development Status :: 4 - Beta", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3.11", "Programming Language :: Python :: 3.12", "Operating System :: POSIX :: Linux", "Intended Audience :: Developers"]
+
+[project.urls]
+Homepage = "https://github.com/colt2822/ordivyr"
+Issues = "https://github.com/colt2822/ordivyr/issues"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+postgres = ["psycopg[binary]>=3"]
+dev = ["pytest>=8"]
 
 [project.scripts]
 ordivyr = "ordivyr.cli:main"
+ordivyr-board = "ordivyr.board.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["ordivyr*"]
+exclude = ["ordivyr.tests*"]
 
 [tool.setuptools.package-data]
-ordivyr = ["team_templates/*.json", "docs/*.md", "examples/plugins/*/*", "tests/fixtures/*"]
+ordivyr = ["team_templates/*.json", "docs/*.md", "examples/plugins/*/*"]
+"ordivyr.board" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["ordivyr/tests"]

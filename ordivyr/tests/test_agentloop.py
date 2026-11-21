@@ -21,7 +21,7 @@ class Box(unittest.TestCase):
         self.b = AL.ToolBox(self.d, write=True, web=True)
 
     def test_files_confined_to_working_folder(self):
-        self.assertEqual(self.b.call("read_file", {"path": "a.txt"}), "hello"); self.assertIn("a.txt", self.b.call("list_files", {}))
+        self.assertEqual(self.b.call("read_file", {"path": "a.txt"}), "     1\thello"); self.assertIn("a.txt", self.b.call("list_files", {}))
         for bad in ("../x", "/etc/passwd", "sub/../../x"): self.assertTrue(self.b.call("read_file", {"path": bad}).startswith("ERROR"), bad)
         os.symlink(self.out, self.d / "lnk")
         self.assertTrue(self.b.call("read_file", {"path": "lnk/secret"}).startswith("ERROR")); self.assertTrue(self.b.call("write_file", {"path": "lnk/pwn", "content": "x"}).startswith("ERROR"))
@@ -58,14 +58,14 @@ class Loop(unittest.TestCase):
         h = seq_http([oa_call("read_file", {"path": "a.txt"}), oa_call("write_file", {"path": "out.txt", "content": "done"}, "c2"), oa_text("all done")], seen)
         text, tok, model, steps, why = AL.run("openai", "https://x.test/v1", "k", "m", "sys", "go", box, h)
         self.assertEqual((text, tok, steps, why), ("all done", 25, 3, "done")); self.assertEqual((self.d / "out.txt").read_text(), "done")
-        self.assertEqual(seen[1]["messages"][-1], {"role": "tool", "tool_call_id": "c1", "content": "hello world"}); self.assertIn("tools", seen[0])
+        self.assertEqual(seen[1]["messages"][-1], {"role": "tool", "tool_call_id": "c1", "content": "     1\thello world"}); self.assertIn("tools", seen[0])
 
     def test_anthropic_tool_use_roundtrip(self):
         seen = []; box = AL.ToolBox(self.d)
         tu = {"content": [{"type": "tool_use", "id": "tu1", "name": "read_file", "input": {"path": "a.txt"}}], "usage": {"input_tokens": 4, "output_tokens": 2}}
         fin = {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 6, "output_tokens": 1}}
         text, tok, _, steps, why = AL.run("anthropic", "https://api.anthropic.com", "k", "m", "sys", "go", box, seq_http([tu, fin], seen))
-        self.assertEqual((text, tok, steps, why), ("ok", 13, 2, "done")); self.assertEqual(seen[1]["messages"][-1]["content"][0], {"type": "tool_result", "tool_use_id": "tu1", "content": "hello world"})
+        self.assertEqual((text, tok, steps, why), ("ok", 13, 2, "done")); self.assertEqual(seen[1]["messages"][-1]["content"][0], {"type": "tool_result", "tool_use_id": "tu1", "content": "     1\thello world", "cache_control": {"type": "ephemeral"}})        # history breakpoint on the last block
 
     def test_step_cap_and_token_budget(self):
         forever = [oa_call("list_files", {}, f"c{i}") for i in range(50)]

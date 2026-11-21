@@ -4,5 +4,5 @@ Boards of agents with License trees (capabilities), Gambits (deterministic rules
 an in-process orchestrator, native local-LLM/GPU management, specialised model roles, hardware-aware templates and plugins.
 This package never imports any proprietary layer built on top (enforced by tests/test_boundary.py).
 """
-__version__ = "0.4.0a0"
+__version__ = "0.5.0"
 CODENAME = "Plugin Ecosystem"

@@ -33,7 +33,7 @@ class GPU:
 
 @dataclass
 class Hardware:
-    gpus: list = field(default_factory=list); cpu_threads: int = 1; ram_mb: int = 0; os: str = ""
+    gpus: list = field(default_factory=list); cpu_threads: int = 1; ram_mb: int = 0; os: str = ""; disk_free_mb: int = 0; disk_path: str = ""
     @property
     def total_vram_mb(self): return sum(g.vram_mb for g in self.gpus)
     @property
@@ -47,7 +47,7 @@ class Hardware:
         return "small" if m <= 8300 else "mid" if m <= 16500 else "large"
     def to_dict(self):
         return {"tier": self.tier, "gpus": [{**asdict(g), "free_mb": g.free_mb, "notes": g.notes} for g in self.gpus], "total_vram_mb": self.total_vram_mb,
-                "cpu_threads": self.cpu_threads, "ram_mb": self.ram_mb, "os": self.os}
+                "cpu_threads": self.cpu_threads, "ram_mb": self.ram_mb, "os": self.os, "disk_free_mb": self.disk_free_mb, "disk_path": self.disk_path}
 
 
 def _run(cmd, timeout=10):
@@ -63,7 +63,7 @@ def parse_nvidia_smi(text):
     return gpus
 
 
-def detect(run=None, meminfo_path="/proc/meminfo"):
+def detect(run=None, meminfo_path="/proc/meminfo", disk_path=None):
     run = run or _run; gpus = []
     if run is not _run or shutil.which("nvidia-smi"):
         try: gpus = parse_nvidia_smi(run(["nvidia-smi", f"--query-gpu={QUERY}", "--format=csv,noheader,nounits"]))
@@ -72,7 +72,12 @@ def detect(run=None, meminfo_path="/proc/meminfo"):
     try:
         m = re.search(r"MemTotal:\s+(\d+) kB", open(meminfo_path).read()); ram = int(m.group(1)) // 1024 if m else 0
     except OSError: pass
-    return Hardware(gpus, os.cpu_count() or 1, ram, os.uname().sysname if hasattr(os, "uname") else os.name)
+    dp = str(disk_path or os.path.expanduser("~")); free = 0
+    try:
+        while dp and not os.path.exists(dp): dp = os.path.dirname(dp)
+        free = shutil.disk_usage(dp).free // (1024 * 1024)
+    except OSError: pass
+    return Hardware(gpus, os.cpu_count() or 1, ram, os.uname().sysname if hasattr(os, "uname") else os.name, free, dp)
 
 
 def params_from_name(name):

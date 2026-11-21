@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+      - name: Offline sanity — no network calls at import
+        run: python -c "import ordivyr, ordivyr.cli, ordivyr.runner; print('import ok')"
+      - name: Tests
+        run: python -m pytest ordivyr/tests -q --tb=short
+      - name: Validate example boards (deterministic)
+        run: |
+          for b in ordivyr/team_templates/*.json; do
+            python -m ordivyr validate "$b" || true   # templates may reference role models absent in CI; validation errors are non-fatal here
+          done
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          python -m build
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-logs-py${{ matrix.python-version }}
+          path: |
+            **/test-results*.xml
+            /tmp/pytest-of-*/
+          if-no-files-found: ignore

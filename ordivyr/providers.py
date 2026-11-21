@@ -9,7 +9,7 @@ over plain http unless the host is loopback. Providers here are TEXT-ONLY (no to
 Everything takes an injectable `http` callable so tests never touch the network.
 """
 from __future__ import annotations
-import json, re, urllib.error, urllib.request
+import http.client, json, re, socket, threading, urllib.error, urllib.request
 from urllib.parse import urlparse
 
 # key: label, protocol, base url, needs a key, suggested models (free text is always allowed)
@@ -46,12 +46,45 @@ def check_base(base_url: str) -> str:
     return base_url.strip().rstrip("/")
 
 
-def _urlopen(method, url, headers, body, timeout):
+_TL = threading.local()          # one keep-alive connection per (thread, scheme, host, port): no TCP/TLS handshake on every step of a tool loop
+
+
+def _slow_path(method, url, headers, body, timeout):
+    """urllib: proxies, redirects, anything the pooled client does not handle."""
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r: return r.status, r.read()
     except urllib.error.HTTPError as e: return e.code, e.read()
     except (urllib.error.URLError, TimeoutError, OSError) as e: raise ProviderError(f"cannot reach the provider: {getattr(e, 'reason', e)}")
+
+
+def _urlopen(method, url, headers, body, timeout):
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname: return _slow_path(method, url, headers, body, timeout)
+    try:
+        if urllib.request.getproxies().get(u.scheme) and not urllib.request.proxy_bypass(u.hostname): return _slow_path(method, url, headers, body, timeout)
+    except Exception: return _slow_path(method, url, headers, body, timeout)
+    pool = _TL.__dict__.setdefault("pool", {}); key = (u.scheme, u.hostname, u.port or (443 if u.scheme == "https" else 80)); path = (u.path or "/") + ("?" + u.query if u.query else "")
+    hdr = dict(headers); hdr.setdefault("Accept-Encoding", "identity")
+    for attempt in (0, 1):
+        c = pool.get(key); fresh = c is None
+        if fresh:
+            c = (http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection)(key[1], key[2], timeout=timeout); pool[key] = c
+        else:
+            try: c.timeout = timeout; c.sock and c.sock.settimeout(timeout)
+            except OSError: c.close(); pool.pop(key, None); c = (http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection)(key[1], key[2], timeout=timeout); pool[key] = c; fresh = True   # idle socket already dead
+        try:
+            if fresh: c.connect(); c.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            c.request(method, path, body=body, headers=hdr); r = c.getresponse(); data = r.read(); st = r.status
+        except (http.client.RemoteDisconnected, http.client.CannotSendRequest, http.client.NotConnected, ConnectionResetError, BrokenPipeError) as e:
+            c.close(); pool.pop(key, None)
+            if fresh or attempt: raise ProviderError(f"cannot reach the provider: {e}")
+            continue                                                  # a reused connection the server had already closed: retry once on a new one
+        except (TimeoutError, OSError) as e:
+            c.close(); pool.pop(key, None); raise ProviderError(f"cannot reach the provider: {e}")
+        if r.will_close: c.close(); pool.pop(key, None)
+        if 300 <= st < 400: return _slow_path(method, url, headers, body, timeout)   # the pooled client does not follow redirects
+        return st, data
 
 
 def _call(http, method, url, headers, payload, timeout):
