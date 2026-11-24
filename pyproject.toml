@@ -7,7 +7,7 @@ name = "ordivyr"
 version = "0.5.0"
 description = "Open-source multi-agent Board: durable queue, BYO-key spending budgets, local-LLM/GPU management, plugins (MCP, A2A, n8n, LangGraph, skills)"
 readme = "README.md"
-authors = [{ name = "ELYREON" }]
+authors = [{ name = "ELYRAON" }]
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

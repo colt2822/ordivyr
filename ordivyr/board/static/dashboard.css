@@ -1,4 +1,4 @@
-/* ELYREON retro-futurist comic: ink outlines, hard offset shadows, halftone dots, speech bubbles, action stamps. System fonts only (CSP blocks web fonts); no inline styles. */
+/* ELYRAON retro-futurist comic: ink outlines, hard offset shadows, halftone dots, speech bubbles, action stamps. System fonts only (CSP blocks web fonts); no inline styles. */
 :root{--bg:#090a0d;--bg2:#10121a;--ink:#f4f2ff;--muted:#b9bce0;--faint:#8f93bd;--star:#ffe02b;--pink:#ff5db1;--violet:#8b5cf6;--cyan:#55d6f2;--bad:#ff5d6c;--ok:#7dffb0;--line:#000;--shadow:6px 6px 0 var(--violet);--edge:#f4f2ff}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;background-image:radial-gradient(rgba(255,224,43,.10) 1.3px,transparent 1.6px),radial-gradient(rgba(255,93,177,.07) 1.3px,transparent 1.6px);background-size:14px 14px,14px 14px;background-position:0 0,7px 7px;min-height:100vh}

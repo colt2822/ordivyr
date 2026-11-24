@@ -3,7 +3,7 @@
 ORDIVYR is pre-1.0 software (0.5.0, beta) that can launch plugins and call models you configure. Please read the threat model before trusting it with anything valuable.
 
 ## Reporting a vulnerability
-Do not open a public issue for security problems. Report privately to the maintainers (ELYREON) through the private vulnerability-reporting
+Do not open a public issue for security problems. Report privately to the maintainers (ELYRAON) through the private vulnerability-reporting
 channel of the repository that distributes this package (GitHub "Report a vulnerability"). Include version (`ordivyr version`), steps to reproduce, and impact.
 We aim to acknowledge within 7 days. Fixes land in the next release; there is no backport policy yet.
 
