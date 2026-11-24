@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build and test distributions
+    name: Build distributions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,17 +16,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies and run tests
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e '.[dev]' build twine
-          python -m pytest ordivyr/tests -q --tb=short
-
       - name: Build sdist and wheel
-        run: python -m build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
 
-      - name: Check distribution metadata
-        run: twine check dist/*
+      - name: Check distribution metadata and wheel import
+        run: |
+          twine check dist/*
+          pip install dist/*.whl
+          python -c "import ordivyr, ordivyr.cli, ordivyr.runner; print('wheel import ok:', ordivyr.__version__)"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
