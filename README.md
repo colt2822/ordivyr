@@ -24,4 +24,4 @@ python -m pytest         # 70+ tests, no network, no model, no spend
 Status: **alpha**. See "Limitations" in `ordivyr/docs/PLUGINS.md` and `CHANGELOG.md`. Nothing in ORDIVYR phones home; every network or model call is something you configured.
 
 ## Docs
-`INSTALL.md` (install and first run), `SECURITY.md` (threat model, reporting), `CHANGELOG.md`, `ordivyr/docs/PLUGINS.md`, `LICENSE` (Apache-2.0), `NOTICE` (Copyright 2026 ELYREON).
+`INSTALL.md` (install and first run), `SECURITY.md` (threat model, reporting), `CHANGELOG.md`, `ordivyr/docs/PLUGINS.md`, `LICENSE` (Apache-2.0), `NOTICE` (Copyright 2026 ELYRAON).
