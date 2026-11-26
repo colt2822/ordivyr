@@ -5,6 +5,7 @@ caller's scope differs from the row's scope is indistinguishable from "does not 
 """
 from __future__ import annotations
 from .errors import Invalid
+from ..durable import SqlitePool
 import hashlib, json, os, secrets, sqlite3, threading, time, weakref
 
 SCHEMA_V1 = """
@@ -173,17 +174,17 @@ class DB:
             try: import psycopg
             except ImportError as e: raise RuntimeError("PostgreSQL backend needs psycopg (v3): pip install 'psycopg[binary]'") from e
             self._pg = psycopg
+        else: self._pool = SqlitePool(self.path)
         self.migrate()
 
     def c(self):
         c = getattr(self._tl, "c", None)
         if c is None:
-            if self.dsn: c = _PgConn(self.dsn, self._pg)
-            else:
-                c = sqlite3.connect(self.path, timeout=60, isolation_level=None); c.row_factory = sqlite3.Row
-                c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA synchronous=FULL"); c.execute("PRAGMA busy_timeout=60000")
-            self._tl.c = c; self._conns.append(c)
-            self._tl.holder = _ConnHolder(c, self._release)           # dropped with the thread-local storage when the owning thread exits: closes the connection (HTTP request threads are short-lived)
+            if self.dsn:
+                c = _PgConn(self.dsn, self._pg); self._conns.append(c)
+                self._tl.holder = _ConnHolder(c, self._release)       # dropped with the thread-local storage when the owning thread exits: closes the connection (HTTP request threads are short-lived)
+            else: c, self._tl.holder = self._pool.lease()             # returned to the pool when the owning thread exits
+            self._tl.c = c
         return c
 
     def _release(self, c):
@@ -197,6 +198,7 @@ class DB:
             try: c.close()
             except Exception: pass
         self._conns = []; self._tl = threading.local()
+        if not self.dsn: self._pool.close()
 
     def xlock(self, key):
         """Cross-thread AND cross-process mutual exclusion for a check-then-write sequence that spans statements (quota, fan-out, budget, single-use consumption).

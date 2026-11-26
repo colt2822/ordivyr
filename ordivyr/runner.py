@@ -14,6 +14,7 @@ from __future__ import annotations
 import tempfile, threading, time, uuid
 from . import durable as D
 from concurrent.futures import ThreadPoolExecutor
+from . import handoff as HO
 from pathlib import Path
 from . import core, gambits as G, license as L, memory as M, providers as PV
 
@@ -25,11 +26,11 @@ class RunError(ValueError): pass
 
 class Runner:
     def __init__(self, board, mission, llm=None, accounts=None, memory=None, drex=None, jev=None, role_plan=None, allow_paid=False, approve=None,
-                 http=None, workdir=None, events=(), clock=time.time, run_id=None, plugins=None, parallel=None, store=None, lease_ttl=10.0, max_steps=None, terminals=None, scheduler="event"):
+                 http=None, workdir=None, events=(), clock=time.time, run_id=None, plugins=None, parallel=None, store=None, lease_ttl=10.0, max_steps=None, terminals=None, scheduler="event", on_event=None):
         if not isinstance(board, dict) or not board.get("agents"): raise RunError("board has no agents")
         self.board, self.mission = board, mission; self.llm, self.accounts = llm, dict(accounts or {}); self.mem = memory or M.NullMemory()
         self.drex, self.jev, self.roles = drex, jev, role_plan or {}; self.allow_paid, self.approve = allow_paid, approve or (lambda agent, why: False)
-        self.http, self.workdir, self.events = http, workdir, tuple(events); self.clock = clock; self.plugins = plugins
+        self.on_event = on_event; self.http, self.workdir, self.events = http, workdir, tuple(events); self.clock = clock; self.plugins = plugins
         self.parallel = max(1, int(parallel if parallel is not None else (board.get("settings") or {}).get("parallel", 1))); self._alock = threading.Lock()   # parallel=1 (default) = the original strictly sequential order
         self.run_id = run_id or "run-" + uuid.uuid4().hex[:8]; board.setdefault("board_id", "board")
         self.eff = core.effective_of(board); self.state = {a["id"]: {"status": "pending", "output": "", "tokens": 0, "failures": 0, "model": a.get("model") or core.DEFAULT_MODEL, "notes": []} for a in board["agents"]}
@@ -42,6 +43,10 @@ class Runner:
     def _port(self, aid):
         try: return self.terminals(aid) if self.terminals else None
         except Exception: return None
+    def _box(self, e, *a, **kw):
+        from . import agentloop as AL
+        box = AL.ToolBox(*a, **kw); box.scope = e.get("scope") or None; return box          # opt-in: only an explicit agent `scope` (researcher|reviewer|coder|readonly) restricts tools
+    def _has_dependents(self, aid): return any(aid in [m for m in G.managers_of(self.board, x["id"])] for x in self.board["agents"])
     def _agent(self, aid): return next(a for a in self.board["agents"] if a["id"] == aid)
 
     def resolve(self, model):
@@ -62,9 +67,9 @@ class Runner:
 
     def _prompt(self, aid):
         e = self.eff(aid); up = [x for x in G.managers_of(self.board, aid)]
-        ctx = "\n\n".join(f"OUTPUT FROM {self._agent(u)['name']}:\n{self.state[u]['output'][:2500]}" for u in up if self.state[u]["status"] == "done" and self.state[u]["output"])
+        ctx = "\n\n".join(HO.render(self._agent(u)['name'], HO.extract(self.state[u]['output'])) for u in up if self.state[u]["status"] == "done" and self.state[u]["output"])
         mem = M.context_for(self.mem, e, e["name"], self.mission, self.board.get("board_id"))
-        return core._agent_prompt(e, self.board, self.mission), "\n\n".join(x for x in (mem, ctx, "Do your part of the mission now. Be concise and concrete.") if x)
+        return core._agent_prompt(e, self.board, self.mission), "\n\n".join(x for x in (mem, ctx, "Do your part of the mission now. Be concise and concrete." + (HO.ASK if self._has_dependents(aid) else "")) if x)
 
     # ------------------------------------------------------------ one agent
     def _execute(self, aid):
@@ -87,7 +92,7 @@ class Runner:
                     be = self.llm.backends[who]; proto, base, key = "openai", be.base + ("/v1" if be.kind == "ollama" else ""), ""
                 else: acc = self.accounts[who]; proto, base, key = acc["protocol"], acc["base"], acc.get("key", "")
                 if proto in ("openai", "anthropic"):
-                    sk = self.plugins.skills_prompt(pids); tl = e.get("tools") or []; box = AL.ToolBox(Path(self.workdir or tempfile.mkdtemp(prefix="ordivyr-run-")), write="file_write" in tl and (e.get("permissions") or "read-only") != "read-only", web="http_api" in tl, ask=False, mcp=tm, terminals=self._port(aid))
+                    sk = self.plugins.skills_prompt(pids); tl = e.get("tools") or []; box = self._box(e, Path(self.workdir or tempfile.mkdtemp(prefix="ordivyr-run-")), write="file_write" in tl and (e.get("permissions") or "read-only") != "read-only", web="http_api" in tl, ask=False, mcp=tm, terminals=self._port(aid))
                     text, tk, used, _, _ = AL.run(proto, base, key, model, system + ("\n\n" + sk if sk else ""), prompt, box, http=self.http, token_budget=budget)
                     return text, tk, used
         if kind == "local":
@@ -95,7 +100,7 @@ class Runner:
             be = (getattr(self.llm, "backends", None) or {}).get(who)          # a manager without a backend map (or an unknown backend) falls through to llm.chat
             if self.workdir and getattr(be, "kind", "") == "openai":                    # local OpenAI-compatible server + a working folder: the same guarded file-tool loop accounts get
                 from . import agentloop as AL
-                tl = e.get("tools") or []; box = AL.ToolBox(Path(self.workdir), write="file_write" in tl and (e.get("permissions") or "read-only") != "read-only", web=False, ask=False, terminals=self._port(aid))
+                tl = e.get("tools") or []; box = self._box(e, Path(self.workdir), write="file_write" in tl and (e.get("permissions") or "read-only") != "read-only", web=False, ask=False, terminals=self._port(aid))
                 text, tk, used, _, _ = AL.run("openai", be.base, getattr(be, "key", ""), model, system, prompt, box, http=self.http, token_budget=budget, max_steps=self.max_steps or AL.MAX_STEPS, on_step=self._step_hook, free_endpoint=True)
                 return text, tk, used
             text, tk, used = self.llm.chat(who, model, system, [{"role": "user", "text": prompt}], max_tokens=maxtok)
@@ -103,7 +108,7 @@ class Runner:
         acc = self.accounts[who]; tools = [t for t in (e.get("tools") or [])]
         if self.workdir and acc.get("protocol") in ("openai", "anthropic"):          # a working folder always gets the guarded loop (reads at least); writes/web stay gated by file_write/http_api below
             from . import agentloop as AL
-            box = AL.ToolBox(Path(self.workdir), write="file_write" in tools and (e.get("permissions") or "read-only") != "read-only", web="http_api" in tools, ask=False, terminals=self._port(aid))
+            box = self._box(e, Path(self.workdir), write="file_write" in tools and (e.get("permissions") or "read-only") != "read-only", web="http_api" in tools, ask=False, terminals=self._port(aid))
             text, tk, used, _, _ = AL.run(acc["protocol"], acc["base"], acc.get("key", ""), model, system, prompt, box, http=self.http, token_budget=budget, max_steps=self.max_steps or AL.MAX_STEPS, on_step=self._step_hook)
             return text, tk, used
         text, tk, used = PV.chat(acc["protocol"], acc["base"], acc.get("key", ""), model, system, [{"role": "user", "text": prompt}], http=self.http, max_tokens=maxtok)
@@ -211,9 +216,15 @@ class Runner:
             self._gambits(aid, "done")
         except Exception as ex:                                                # any single-agent failure is contained and recorded
             st["failures"] += 1; st.update(status="failed", output=f"{type(ex).__name__}: {str(ex)[:300]}"); self._note(aid, f"failed: {type(ex).__name__}: {str(ex)[:120]}"); self._gambits(aid, "failed")
+        self._emit({"done": "completed", "failed": "failed"}.get(st["status"]), {"run_id": self.run_id, "agent": aid, "name": a["name"], "tokens": st["tokens"]})
         if self.jev:
             try: self.jev.record(self.run_id, self.board["board_id"], aid, f"{a['name']}: {self.mission[:80]}", {"done": "done", "failed": "failed"}.get(st["status"], "queued"), {"tokens": st["tokens"]}, st["output"] if st["status"] == "failed" else None)
             except Exception as ex: self._note(aid, f"jev record failed: {ex}")
+
+    def _emit(self, event, payload):
+        if self.on_event and event:
+            try: self.on_event(event, payload)
+            except Exception as ex: self.log.append({"t": self.clock(), "agent": None, "msg": f"on_event failed: {type(ex).__name__}"})      # a webhook can never break a run
 
     # ------------------------------------------------------------ run
     def cancel(self):

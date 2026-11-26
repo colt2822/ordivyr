@@ -114,7 +114,9 @@ def main(argv=None):
     s = sub.add_parser("plan"); srv(s); s.add_argument("models", nargs="+")
     s = sub.add_parser("new"); srv(s); s.add_argument("template"); s.add_argument("-o", "--out")
     s = sub.add_parser("validate"); s.add_argument("board")
-    s = sub.add_parser("run"); srv(s); s.add_argument("--home"); s.add_argument("board"); s.add_argument("--mission", required=True); s.add_argument("--memory"); s.add_argument("--memory-backend", choices=["sqlite", "nova"], default="sqlite"); s.add_argument("--tenant", default="local"); s.add_argument("--project", default="default"); s.add_argument("--jev-db"); s.add_argument("--jev-src"); s.add_argument("--json", action="store_true"); s.add_argument("--log", help="write the run transcript to this path (default: <home>/runs/<run_id>.json, --log none to disable)")
+    s = sub.add_parser("replay", help="re-run a board against a recorded transcript: no model calls, $0"); s.add_argument("board"); s.add_argument("run", help="transcript path or run id"); s.add_argument("--home"); s.add_argument("--parallel", type=int); s.add_argument("--json", action="store_true")
+    s = sub.add_parser("scorecard", help="completion rate / failures / tokens per board from recorded runs"); s.add_argument("--home")
+    s = sub.add_parser("run"); srv(s); s.add_argument("--webhook-url", help="POST signed completed/failed events here (secret in $ORDIVYR_WEBHOOK_SECRET)"); s.add_argument("--home"); s.add_argument("board"); s.add_argument("--mission", required=True); s.add_argument("--memory"); s.add_argument("--memory-backend", choices=["sqlite", "nova"], default="sqlite"); s.add_argument("--tenant", default="local"); s.add_argument("--project", default="default"); s.add_argument("--jev-db"); s.add_argument("--jev-src"); s.add_argument("--json", action="store_true"); s.add_argument("--log", help="write the run transcript to this path (default: <home>/runs/<run_id>.json, --log none to disable)")
     s.add_argument("--workdir", help="folder the agents' file tools are confined to"); s.add_argument("--durable", help="durable task DB: each agent is a fenced, resumable task"); s.add_argument("--run-id"); s.add_argument("--max-steps", type=int); s.add_argument("--lease-ttl", type=float, default=10.0)
     s = sub.add_parser("durable"); s.add_argument("action", choices=["status", "audit", "reap", "worker", "supervise"]); s.add_argument("args", nargs=argparse.REMAINDER)
     s = sub.add_parser("up"); s.add_argument("--home"); s.add_argument("--workers", type=int, default=2); s.add_argument("--ttl", type=float, default=6.0)
@@ -153,6 +155,17 @@ def main(argv=None):
             if needs: print(f"note: {len(needs)} agent(s) still on the free deterministic model", file=sys.stderr)
         elif a.cmd == "validate":
             r = core.validate(json.load(open(a.board))); out(r); return 1 if r["errors"] else 0
+        elif a.cmd == "scorecard":
+            from . import scorecard as SCD
+            out(SCD.scorecard(SCD.collect(_home(a) / "runs")))
+        elif a.cmd == "replay":
+            from . import replay as RP
+            res, diff = RP.replay(json.load(open(a.board)), RP.load(a.run, _home(a)), parallel=a.parallel)
+            if a.json: out({"status": res["status"], "diff": diff, "agents": {k: v["status"] for k, v in res["agents"].items()}})
+            else:
+                print(f"replay {res['run_id']}: {res['status']} - {'identical to the recording' if not diff else str(len(diff)) + ' agent(s) differ'}")
+                for d in diff: print(f"  {d['agent']}: recorded {d['recorded']}, replayed {d['replayed']}")
+            return 1 if diff else 0
         elif a.cmd == "run":
             from . import firstrun as FR
             FR.apply_defaults(a, FR.load_config(getattr(a, "home", None)))
@@ -163,14 +176,19 @@ def main(argv=None):
             store = None
             if a.durable:
                 from . import durable as DU; store = DU.Store(a.durable)
-            res = RUN.Runner(board, a.mission, llm=mgr, role_plan=plan, memory=(None if not a.memory else NOVA_BACKEND(a) if a.memory_backend == "nova" else M.SqliteMemory(a.memory)), drex=DX.DrexBridge(), jev=jev,
+            hook = None
+            if getattr(a, "webhook_url", None):
+                from . import webhooks_out as WO
+                hook = WO.Emitter(a.webhook_url, os.environ.get("ORDIVYR_WEBHOOK_SECRET", ""))          # background delivery (never stalls the scheduler); flushed below before exit
+            res = RUN.Runner(board, a.mission, llm=mgr, on_event=hook, role_plan=plan, memory=(None if not a.memory else NOVA_BACKEND(a) if a.memory_backend == "nova" else M.SqliteMemory(a.memory)), drex=DX.DrexBridge(), jev=jev,
                              workdir=a.workdir, store=store, run_id=a.run_id, max_steps=a.max_steps, lease_ttl=a.lease_ttl).run()
+            if hook: hook.flush(60)
             log_path = None
             if getattr(a, "log", None) != "none":
                 dest = Path(a.log) if getattr(a, "log", None) else _home(a) / "runs" / f"{res['run_id']}.json"
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)          # transcripts hold prompts and model output: owner-only
-                with os.fdopen(fd, "w") as fh: fh.write(json.dumps(res, indent=2))
+                with os.fdopen(fd, "w") as fh: fh.write(json.dumps({**res, "board_id": board.get("board_id"), "board_name": board.get("name"), "mission": a.mission}, indent=2))
                 os.chmod(dest, 0o600)
                 log_path = str(dest)
             if a.json: out({**res, "log_path": log_path})

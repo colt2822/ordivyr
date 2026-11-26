@@ -19,6 +19,7 @@ def run(url, token, name, ws, engine="ordivyr", slots=2, ttl=6.0, stop=None, lon
         W.HANDLERS["board.lite"] = lite_handler
     else:
         W.HANDLERS[f"board.{engine}"] = board_handler_sandboxed if sandbox else board_handler
+        if engine == "ordivyr": W.HANDLERS[f"board.{engine}.gated"] = W.HANDLERS[f"board.{engine}"]
     store = BoardRemote(url, token, timeout=8.0)
     W.serve_pool(store, name, node or name, ws, slots=slots, ttl=ttl, kinds=[f"board.{engine}"], stop=stop or threading.Event(), longpoll=longpoll, log=log)
 

@@ -1,0 +1,61 @@
+{
+ "subject": "ordivyr",
+ "suite": "ci-stub",
+ "suite_hash": "e381d84c7c518fcd",
+ "git": {
+  "sha": "a08e86e",
+  "dirty": true,
+  "branch": "board/harness-upgrades"
+ },
+ "from_run": "ci-stub",
+ "scenario_model": "stub",
+ "n": 14,
+ "pass": 14,
+ "rate": 1.0,
+ "by_category": {
+  "bugfix": {
+   "n": 3,
+   "pass": 3
+  },
+  "implement": {
+   "n": 3,
+   "pass": 3
+  },
+  "longrun": {
+   "n": 1,
+   "pass": 1
+  },
+  "toolcall": {
+   "n": 2,
+   "pass": 2
+  },
+  "context": {
+   "n": 2,
+   "pass": 2
+  },
+  "security": {
+   "n": 3,
+   "pass": 3
+  }
+ },
+ "violations": 0,
+ "orphans": 0,
+ "tokens_per_validated": 4157.285714285715,
+ "p95_latency_s": 1.87,
+ "recovery": {
+  "early": {
+   "recovered": 3,
+   "n": 3,
+   "dup": 2.0
+  },
+  "late": {
+   "recovered": 3,
+   "n": 3,
+   "dup": 3.0
+  }
+ },
+ "concurrency": {
+  "passed": 4,
+  "n": 4
+ }
+}

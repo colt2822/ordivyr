@@ -69,7 +69,7 @@ class BoardCoordinator(Coordinator):
         if m not in LEASE_METHODS: raise PermissionError(f"workers cannot call {m!r}")
         ts = self.board.tenants_for(pr)
         if m in CLAIM_SIG:
-            d = dict(zip(CLAIM_SIG[m], a)); d.update(k); d["kinds"] = [f"board.{pr['engine']}"]; d["tenants"] = ts; d["_w"] = pr["wid"]
+            d = dict(zip(CLAIM_SIG[m], a)); d.update(k); d["kinds"] = self.board.claim_kinds(pr); d["tenants"] = ts; d["_w"] = pr["wid"]
             if m != "claim_many_wait": d.pop("wait_s", None)
             return m, [], d
         try: bound = inspect.signature(getattr(self.store, m)).bind(*a, **k)           # bind positional AND keyword calls to the real signature: the tenant check below cannot be skipped by how the call is spelled

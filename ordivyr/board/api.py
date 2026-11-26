@@ -31,6 +31,7 @@ def _n(conv, x, default):
 
 
 def make_handler(board: Board, limits=None, tls=False, access_log=None):
+    streams = {}; streams_lock = threading.Lock(); MAX_STREAMS = 4
     lim = Limiter(); L = {"login": (20, 60), "auth_fail": (30, 60), "hook": (120, 60), "api": (600, 60), **(limits or {})}
     R = []
     def route(method, pattern):
@@ -152,6 +153,8 @@ def make_handler(board: Board, limits=None, tls=False, access_log=None):
     def _aj(p, m, body, q): return b.approve_job(p, m["project"], m["jid"], body.get("resolution", "retry"))
     @route("GET", "/v1/projects/{project}/jobs/{jid}/events")
     def _ej(p, m, body, q): return {"events": b.job_events(p, m["project"], m["jid"])}
+    @route("GET", "/v1/projects/{project}/jobs/{jid}/timings")
+    def _tj(p, m, body, q): return b.job_timings(p, m["project"], m["jid"])
     @route("GET", "/v1/projects/{project}/jobs/{jid}/outputs")
     def _oj(p, m, body, q):
         rows = b.job_outputs(p, m["project"], m["jid"], _n(int, q.get("after", [0])[0], 0),
@@ -237,6 +240,24 @@ def make_handler(board: Board, limits=None, tls=False, access_log=None):
             self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("Content-Security-Policy", CSP); self.send_header("Referrer-Policy", "no-referrer")
             for k, v in (extra or {}).items(): self.send_header(k, v)
             self.end_headers(); self.wfile.write(raw)
+        def _sse(self, p, project, jid, q):
+            """text/event-stream of one job's lifecycle, steps and spend-relevant status. Headers go out only after the job is authorised (so 403/404 stay JSON)."""
+            b._scope(p, project, "read"); b._row(p.org, project, jid)
+            with streams_lock:
+                over = streams.get(p.kid, 0) >= MAX_STREAMS
+                if not over: streams[p.kid] = streams.get(p.kid, 0) + 1
+            if over: return self._send(429, {"error": {"code": "rate_limited", "message": f"at most {MAX_STREAMS} live streams per key"}})
+            try:
+                self._code = 200; self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-store"); self.send_header("X-Accel-Buffering", "no")
+                self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("X-Trace-Id", getattr(self, "_trace", "-")); self.send_header("Connection", "close"); self.end_headers(); self.close_connection = True
+                dead = []
+                def emit(event, data):
+                    try: self.wfile.write(f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n".encode()); self.wfile.flush()
+                    except OSError: dead.append(1)
+                try: b.job_stream(p, project, jid, emit, alive=lambda: not dead, after=int((q.get("after") or ["0"])[0]) if (q.get("after") or ["0"])[0].isdigit() else 0)
+                except BoardError as e: emit("error", {"code": e.code, "message": str(e)})
+            finally:
+                with streams_lock: streams[p.kid] = max(0, streams.get(p.kid, 1) - 1)
         def _body(self):
             cl = (self.headers.get("Content-Length") or "0").strip()
             if not cl.isdigit(): self.close_connection = True; raise Invalid("bad Content-Length")           # int() on junk was a 500; a negative length read until EOF
@@ -286,6 +307,8 @@ def make_handler(board: Board, limits=None, tls=False, access_log=None):
                     return self._send(401, {"error": {"code": "unauthorized", "message": "missing, invalid, expired or revoked key"}})
                 self._who = f"{p.role}:{p.org}:{p.kid}"
                 if not lim.allow(("api", p.kid), *L["api"]): return self._send(429, {"error": {"code": "rate_limited", "message": "slow down"}})
+                ms = re.fullmatch(r"/v1/projects/([^/]+)/jobs/([^/]+)/stream", path)
+                if ms and method == "GET": return self._sse(p, ms.group(1), ms.group(2), parse_qs(u.query))
                 for meth, rx, fn in R:
                     mm = rx.fullmatch(path)
                     if mm and meth == method: return self._send(200, fn(p, mm.groupdict(), body, parse_qs(u.query)))

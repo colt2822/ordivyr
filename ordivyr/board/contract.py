@@ -151,7 +151,7 @@ def capabilities(engine, tools, max_concurrency=1, features=(), models_via="gate
 
 
 ISOLATION_LEVELS = ("process", "namespace", "container", "microvm")      # what separates one job from the host and from other jobs; Board only places SHARED-pool work on non-"process" workers
-FEATURES = frozenset({"cancel", "checkpoint", "resume", "validators", "delegate", "streaming", "vision"})
+FEATURES = frozenset({"cancel", "checkpoint", "resume", "validators", "delegate", "streaming", "vision", "approval_gate"})
 
 
 def validate_capabilities(c):
@@ -173,5 +173,6 @@ def requirements_met(job, caps):
     ag = job.get("agent") or {}
     for t in (ag.get("tools") or []): need.add(t)
     feats = set(caps.get("features") or ())
+    if (ag.get("permissions") or {}).get("approve") and (job.get("engine") != "ordivyr" or "approval_gate" not in feats): return False          # never run a gated job where the gate cannot be enforced
     if job.get("validators") and "validators" not in feats: return False          # validators execute commands on the worker host: only runtimes that explicitly advertise it
     return need <= set(caps.get("tools") or ()) and "cancel" in feats

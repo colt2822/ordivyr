@@ -14,7 +14,8 @@ class Rpc:
 
 def main():
     from ..selfhost.gateway import Reply, GatewayError
-    from . import runtime_adapter as RA
+    from . import runtime_adapter as RA, gate as G
+    from .. import durable as D
     job = json.load(open("/run/b/job.json")); rpc = Rpc(os.environ["BOARD_SOCK"])
     class GW:
         def chat(self, agent, endpoint, model, messages, tools=None, max_tokens=512, timeout=120, **kw):
@@ -33,8 +34,14 @@ def main():
         try: p = subprocess.run(v["cmd"] if isinstance(v["cmd"], list) else v["cmd"].split(), cwd="/work", capture_output=True, timeout=v.get("timeout", 60)); return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace")[-4000:]
         except subprocess.TimeoutExpired: return 124, "validator timed out"
         except OSError as e: return 127, str(e)
+    def gate(name, args):
+        r = rpc.call(op="gate", name=name, args=args)
+        if "hold" in r: raise D.NeedsApproval(r["hold"])
+        if "ok" not in r: raise D.NeedsApproval("needs_owner: the approval gate did not answer; refusing to continue")
+        return r["ok"]
     from pathlib import Path
-    try: r, _ = RA.execute_job(job, Path("/work"), GW(), on_step, Tools(), validate)
+    try: r, _ = RA.execute_job(job, Path("/work"), GW(), on_step, Tools(), validate, gate=gate if G.gated(job) else None)
+    except D.NeedsApproval: return                          # the broker already holds the reason; this must not become a `fatal`
     except GatewayError as e: rpc.call(op="gwfail", code=e.code, msg=str(e), retryable=e.retryable); return
     except Exception as e: rpc.call(op="fatal", msg=f"internal: {type(e).__name__}: {e}"[:600]); return
     rpc.call(op="done", result=r)

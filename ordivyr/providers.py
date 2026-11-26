@@ -9,7 +9,7 @@ over plain http unless the host is loopback. Providers here are TEXT-ONLY (no to
 Everything takes an injectable `http` callable so tests never touch the network.
 """
 from __future__ import annotations
-import http.client, json, re, socket, threading, urllib.error, urllib.request
+import http.client, json, random, re, socket, threading, time, urllib.error, urllib.request
 from urllib.parse import urlparse
 
 # key: label, protocol, base url, needs a key, suggested models (free text is always allowed)
@@ -49,12 +49,24 @@ def check_base(base_url: str) -> str:
 _TL = threading.local()          # one keep-alive connection per (thread, scheme, host, port): no TCP/TLS handshake on every step of a tool loop
 
 
+class _Body(bytes):
+    """Response bytes that also carry the server's Retry-After (seconds), so the (status, body) shape of the HTTP helpers does not change."""
+    retry_after = None
+
+
+def _with_retry_after(raw, value):
+    try: secs = float(value)
+    except (TypeError, ValueError): return raw            # absent, or the HTTP-date form: use our own backoff
+    if not 0 <= secs < float("inf"): return raw
+    b = _Body(raw); b.retry_after = secs; return b
+
+
 def _slow_path(method, url, headers, body, timeout):
     """urllib: proxies, redirects, anything the pooled client does not handle."""
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r: return r.status, r.read()
-    except urllib.error.HTTPError as e: return e.code, e.read()
+    except urllib.error.HTTPError as e: return e.code, _with_retry_after(e.read(), e.headers.get("Retry-After") if e.headers else None)
     except (urllib.error.URLError, TimeoutError, OSError) as e: raise ProviderError(f"cannot reach the provider: {getattr(e, 'reason', e)}")
 
 
@@ -84,11 +96,25 @@ def _urlopen(method, url, headers, body, timeout):
             c.close(); pool.pop(key, None); raise ProviderError(f"cannot reach the provider: {e}")
         if r.will_close: c.close(); pool.pop(key, None)
         if 300 <= st < 400: return _slow_path(method, url, headers, body, timeout)   # the pooled client does not follow redirects
-        return st, data
+        return st, (_with_retry_after(data, r.getheader("Retry-After")) if st >= 400 else data)
+
+
+RETRY_STATUS = (503, 529); RETRIES = 2; BACKOFF_BASE = 0.5; BACKOFF_CAP = 8.0      # 429 is NOT retried here: an account pool fails over to the next account immediately
+_sleep = time.sleep
+
+
+def backoff_delay(attempt, retry_after=None, rnd=random.random):
+    """Exponential with full jitter, capped; a server Retry-After wins (also capped)."""
+    if retry_after is not None: return min(BACKOFF_CAP, max(0.0, float(retry_after)))
+    return rnd() * min(BACKOFF_CAP, BACKOFF_BASE * (2 ** attempt))
 
 
 def _call(http, method, url, headers, payload, timeout):
-    st, raw = (http or _urlopen)(method, url, headers, None if payload is None else json.dumps(payload).encode(), timeout)
+    body = None if payload is None else json.dumps(payload).encode()
+    for attempt in range(RETRIES + 1):
+        st, raw = (http or _urlopen)(method, url, headers, body, timeout)
+        if st not in RETRY_STATUS or attempt == RETRIES: break
+        _sleep(backoff_delay(attempt, getattr(raw, "retry_after", None)))          # 503/529: transient, same request, same task (no new fence, no lost step state)
     try: j = json.loads(raw or b"{}")
     except ValueError: j = {}
     if st in (401, 403): raise ProviderError("the provider rejected the API key")
@@ -135,3 +161,12 @@ def chat(protocol, base, key, model, system, messages, http=None, timeout=90, ma
               "messages": [{"role": "system", "content": system}] + [{"role": m["role"], "content": m["text"]} for m in messages]}, timeout)
     text = (((j.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
     return text, int((j.get("usage") or {}).get("total_tokens") or 0), j.get("model") or model
+
+
+def chat_with_fallback(chain, system, messages, http=None, timeout=90, max_tokens=2048):
+    """chain = [{"protocol","base","key","model"}, ...] tried in order on LimitError/ProviderError (after the per-provider backoff). -> (text, tokens, model, index_used)."""
+    last = None
+    for i, c in enumerate(chain):
+        try: t, tk, m = chat(c["protocol"], c["base"], c.get("key", ""), c["model"], system, messages, http=http, timeout=timeout, max_tokens=max_tokens); return t, tk, m, i
+        except (LimitError, ProviderError) as e: last = e
+    raise last or ProviderError("empty fallback chain")

@@ -116,6 +116,17 @@ def test_short_lived_request_threads_do_not_leak_database_connections(w):
     assert len(w.board.db._conns) < 25, len(w.board.db._conns)
     sc = getattr(w.board.store, "_conns", [])
     assert len(sc) < 25, len(sc)
+    for pool in (getattr(w.board.db, "_pool", None), getattr(w.board.store, "_pool", None)):      # SQLite: connections are reused, not reopened
+        if pool: assert len(pool.all) < 25, len(pool.all)
+
+
+def test_connection_pool_reuses_rolls_back_and_drops_closed_connections(tmp_path):
+    from ordivyr.durable import SqlitePool
+    pool = SqlitePool(tmp_path / "p.db")
+    c, lease = pool.lease(); c.execute("CREATE TABLE t(x)"); c.execute("BEGIN IMMEDIATE"); c.execute("INSERT INTO t VALUES(1)"); del lease      # the thread dies mid-transaction
+    c2, lease2 = pool.lease(); assert c2 is c and not c2.in_transaction and c2.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 0
+    c2.close(); del lease2; c3, _lease3 = pool.lease(); assert c3 is not c and c3.execute("SELECT 1").fetchone()[0] == 1
+    pool.close(); assert not pool.all
 
 
 def test_upgrade_from_schema_v4_preserves_data_and_adds_every_later_table(tmp_path, monkeypatch):

@@ -88,7 +88,7 @@ class BrokerTerminal:
 def _specs(box, allow):
     return [{"type": "function", "function": {"name": d["name"], "description": d["description"], "parameters": d["schema"]}} for d in box.defs if allow is None or d["name"] in allow]
 
-def run_agent(agent, prompt, workdir, gateway, history=None, terminals=None, on_step=None, task_id=None, board=None, endpoint=None, model=None, timeout=120, max_tokens=None, clock=None, mcp=None, spend_scope=None, spend_limit_usd=None, endpoint_binding=None, check=None):
+def run_agent(agent, prompt, workdir, gateway, history=None, terminals=None, on_step=None, task_id=None, board=None, endpoint=None, model=None, timeout=120, max_tokens=None, clock=None, mcp=None, spend_scope=None, spend_limit_usd=None, endpoint_binding=None, check=None, gate=None):
     """-> dict(text, steps, tool_calls, tokens_in, tokens_out, cost_usd, endpoint, model, stop, ...). `steps` counts MODEL TURNS (one request to the model, however many tools it
     called); tool executions are counted separately in `tool_calls`. Explicit limits: turns (agent max_steps), tool calls (max_tool_calls), wall clock (max_seconds) and spend
     (budget_usd). `endpoint`/`model` override the agent's reference for this run only (provider switch without editing the agent). A malformed or output-truncated tool call is
@@ -96,7 +96,7 @@ def run_agent(agent, prompt, workdir, gateway, history=None, terminals=None, on_
     import time as _t
     now = clock or _t.time; t0 = now()
     ep, md = endpoint or agent["endpoint"], model or agent["model"]; perms = agent.get("permissions") or DEFAULT_PERMS; hist_id = history.begin(agent["id"], task_id, board) if history else None
-    box = AL.ToolBox(Path(workdir), write=bool(perms.get("write")), web=bool(perms.get("web")), ask=False, terminals=terminals if perms.get("terminal", "none") != "none" else None, mcp=mcp)
+    box = AL.ToolBox(Path(workdir), write=bool(perms.get("write")), web=bool(perms.get("web")), ask=False, terminals=terminals if perms.get("terminal", "none") != "none" else None, mcp=mcp); box.gate = gate
     allow = None if agent.get("tools") is None else set(agent["tools"])
     if allow is not None and not agent.get('strict_tools'):                 # legacy saved allowlists inherit refinements; compiled drawings have explicit tool grants
         if "write_file" in allow: allow.add("edit_file")

@@ -2,6 +2,7 @@
 // ORDIVYR Board customer dashboard. Live data only (no mock rows). SECURITY: every API-supplied value is rendered as a text node (markup is never parsed);
 // the session token lives in this closure only (not in browser storage, so a reload signs you out and an XSS cannot read a persisted token); CSP forbids inline script/style.
 const $ = (s) => document.querySelector(s);
+const v = $("#view");          // the main content area (was never bound: show() threw ReferenceError on every load)
 const S = {tok: null, me: null, tab: "overview", proj: null, projects: [], job: null, pending: null, enrolTok: null};
 const TABS = {overview: "Overview", jobs: "Jobs", agents: "Agents", schedules: "Schedules", workers: "Workers", billing: "Spending", secrets: "Secrets", team: "Team", keys: "Keys", security: "Security", audit: "Audit"};
 const ADMIN_ONLY = new Set(["secrets", "team", "keys"]);
@@ -19,8 +20,29 @@ function el(tag, props, ...kids) {
   for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return e;
 }
+const timCache = new Map();          // key -> timings of a FINISHED tree (the 5 s refresh must not re-query it); live trees are refetched
+async function timings(project, job) {
+  const key = `${S.me.org}/${project}/${job}`; if (timCache.has(key)) return timCache.get(key);
+  const t = await api("GET", `/v1/projects/${project}/jobs/${job}/timings`).catch(() => null);
+  if (t && t.jobs.length && t.jobs.every((j) => ["completed", "failed", "cancelled"].includes(j.status))) timCache.set(key, t);
+  return t;
+}
+function waterfall(t) {
+  // Pure DOM + CSSOM (Object.assign(node.style, ...)): the CSP forbids style="" attributes, so widths are set after creation.
+  const jobs = (t && t.jobs || []).filter((j) => j.segments.length); if (!jobs.length) return el("p", {class: "muted"}, "No timing data (events were purged or the job has not started).");
+  const t0 = Math.min(...jobs.map((j) => j.segments[0].start)), t1 = Math.max(...jobs.map((j) => j.segments[j.segments.length - 1].end)), span = Math.max(t1 - t0, 0.001);
+  const pct = (x) => ((x - t0) / span * 100); const dur = (a, b) => (b - a < 1 ? Math.round((b - a) * 1000) + " ms" : (b - a).toFixed(1) + " s");
+  const rows = jobs.map((j) => {
+    const track = el("div", {class: "wf-track"});
+    for (const g of j.segments) { const b = el("div", {class: "wf-seg wf-" + g.phase + (g.open ? " wf-open" : ""), title: `${g.phase}${g.phase === "running" ? " (model + tools)" : ""} · attempt ${g.attempt} · ${dur(g.start, g.end)}`}); Object.assign(b.style, {left: pct(g.start) + "%", width: Math.max(pct(g.end) - pct(g.start), 0.4) + "%"}); track.append(b); }
+    for (const x of j.ticks || []) { const k = el("div", {class: "wf-tick"}); Object.assign(k.style, {left: pct(x) + "%"}); track.append(k); }
+    const lab = el("div", {class: "wf-label mono"}, "  ".repeat(Math.min(j.depth || 0, 6)) + (j.agent || j.job_id), " ", stamp(j.status));
+    return el("div", {class: "wf-row"}, lab, track);
+  });
+  const legend = el("div", {class: "wf-legend muted"}, ["queued", "running", "validating", "held"].map((p) => el("span", {}, el("i", {class: "wf-sw wf-" + p}), p === "running" ? "running (model + tools)" : p)), el("span", {}, el("i", {class: "wf-sw wf-tickkey"}), "tool output"), el("span", {class: "mono"}, "total " + dur(t0, t1) + (t.truncated ? " · first 100 jobs" : "")));
+  return el("div", {class: "wf"}, legend, rows);
+}
 const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : "-");
-const usd = (c) => "$" + (c / 100).toFixed(2);
 const stamp = (s) => el("span", {class: "stamp " + String(s).replace(/[^a-z_]/gi, "")}, String(s).replace("_", " "));
 const panel = (title, body, cls = "") => el("section", {class: "panel " + cls}, el("h2", {}, title), el("div", {class: "body"}, body));
 function table(cols, rows, onrow) {
@@ -33,7 +55,7 @@ function fail(e) { say(e.message || String(e), "bad"); }
 function btn(label, fn, cls = "") { return el("button", {class: "btn small " + cls, onclick: async (ev) => { ev.stopPropagation(); try { await fn(); await show(); } catch (e) { fail(e); } }}, label); }
 function form(fields, submit, onsubmit) {
   const refs = {};
-  const f = el("form", {class: "f", onsubmit: async (ev) => { ev.preventDefault(); const v = {}; for (const [n, i] of Object.entries(refs)) v[n] = i.type === "checkbox" ? i.checked : i.value; try { await onsubmit(v); await show(); } catch (e) { fail(e); } }},
+  const f = el("form", {class: "f", onsubmit: async (ev) => { ev.preventDefault(); const v = {}; for (const [n, i] of Object.entries(refs)) v[n] = i.type === "checkbox" ? i.checked : i.value; try { await onsubmit(v); ev.target.reset(); for (const i of Object.values(refs)) delete i.dataset.dirty; await show(); } catch (e) { fail(e); } }},
     fields.map((x) => { const i = x.options ? el("select", {}, x.options.map((o) => el("option", {value: o}, o))) : x.area ? el("textarea", {placeholder: x.ph || ""}) : el("input", {type: x.type || "text", placeholder: x.ph || "", autocomplete: x.type === "password" ? "current-password" : "off", checked: x.checked}); if (x.value !== undefined) i.value = x.value; refs[x.name] = i; return el("label", {class: "fl"}, x.label, i); }),
     el("div", {class: "row"}, el("button", {class: "btn"}, submit)));
   return f;
@@ -85,7 +107,7 @@ async function overview() {
   const [h, b, a] = await Promise.all([api("GET", "/v1/health"), api("GET", "/v1/spending"), api("GET", "/v1/alerts")]);
   const q = Object.values(h.queue).reduce((s, x) => ({queued: s.queued + x.queued, running: s.running + x.running, failed: s.failed + x.failed}), {queued: 0, running: 0, failed: 0});
   const kp = (n, l) => el("div", {class: "kpi"}, el("b", {}, n), el("span", {}, l));
-  const nodes = [panel("Mission control", [el("div", {class: "bubble " + (h.status === "ok" ? "ok" : "warn")}, h.status === "ok" ? "All systems nominal." : h.status), el("div", {class: "kpis"}, kp(q.queued, "queued"), kp(q.running, "running"), kp(q.failed, "failed"), kp(h.workers.filter((w) => w.online).length + "/" + h.workers.length, "workers online"), kp(usd(b.running.total_cents), "this period"))]),
+  const nodes = [panel("Mission control", [el("div", {class: "bubble " + (h.status === "ok" ? "ok" : "warn")}, h.status === "ok" ? "All systems nominal." : h.status), el("div", {class: "kpis"}, kp(q.queued, "queued"), kp(q.running, "running"), kp(q.failed, "failed"), kp(h.workers.filter((w) => w.online).length + "/" + h.workers.length, "workers online"), kp("$" + Number(b.usage.provider_cost_usd).toFixed(2), "model cost this month"))]),
     panel("Usage", [el("p", {}, `${b.usage.jobs} jobs · ${b.usage.compute_min} compute min this period`), el("p", {class: "muted"}, `Provider cost $${b.usage.provider_cost_usd}`)], "cyan")];
   nodes.push(panel("Alerts", a.alerts.length ? table(["when", "kind", "detail"], a.alerts.slice(0, 8).map((x) => ({cells: [when(x.ts), stamp(x.kind), JSON.stringify(x.detail)]}))) : el("p", {class: "muted"}, "No alerts."), "pink"));
   return nodes;
@@ -95,7 +117,7 @@ async function jobsView() {
   if (S.job) return nodes.concat(await jobDetail());
   const js = (await api("GET", `/v1/projects/${S.proj}/jobs`)).jobs;
   if (canWrite()) { const ags = (await api("GET", `/v1/projects/${S.proj}/agents`)).agents;
-    nodes.push(panel("Launch a job", ags.length ? form([{name: "agent", label: "Agent", options: ags.map((x) => x.id)}, {name: "prompt", label: "Mission", area: true, ph: "What should the agent do?"}], "Launch", async (v) => { const r = await api("POST", `/v1/projects/${S.proj}/jobs`, {agent_id: v.agent, prompt: v.prompt}); say("Launched " + r.job_id); }) : el("p", {class: "muted"}, "Define an agent first (Agents tab)."), "pink")); }
+    nodes.push(panel("Launch a job", ags.length ? form([{name: "agent", label: "Agent", options: ags.map((x) => x.id)}, {name: "prompt", label: "Mission", area: true, ph: "What should the agent do?"}, {name: "workspace", label: "Workspace folder (optional: jobs with the same name share files)", ph: "my-app"}], "Launch", async (v) => { const r = await api("POST", `/v1/projects/${S.proj}/jobs`, {agent_id: v.agent, prompt: v.prompt, ...(v.workspace.trim() ? {workspace: v.workspace.trim()} : {})}); say("Launched " + r.job_id); }) : el("p", {class: "muted"}, "Define an agent first (Agents tab)."), "pink")); }
   nodes.push(panel("Jobs", table(["job", "status", "agent", "depth", "created", ""], js.map((j) => ({id: j.job_id, cells: [el("span", {class: "mono"}, j.job_id), stamp(j.status), j.agent_id || j.agent || "", j.depth, when(j.created),
     el("span", {class: "row"}, canWrite() && ["queued", "running", "claimed"].includes(j.status) ? btn("Cancel", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/cancel`, {}), "bad") : null, canWrite() && ["failed", "cancelled"].includes(j.status) ? btn("Retry", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/retry`, {})) : null)]})), (r) => { S.job = r.id; show(); }), "wide"));
   return nodes;
@@ -117,14 +139,15 @@ async function jobOutputs(project, job) {
   return cached;
 }
 async function jobDetail() {
-  const [j, ev, logs] = await Promise.all([api("GET", `/v1/projects/${S.proj}/jobs/${S.job}`), api("GET", `/v1/projects/${S.proj}/jobs/${S.job}/events`), jobOutputs(S.proj, S.job)]);
+  const [j, ev, logs, tim] = await Promise.all([api("GET", `/v1/projects/${S.proj}/jobs/${S.job}`), api("GET", `/v1/projects/${S.proj}/jobs/${S.job}/events`), jobOutputs(S.proj, S.job), timings(S.proj, S.job)]);
   const u = (j.result && j.result.usage) || {}; const res = j.result || {};
   const nodes = [panel("Job " + j.job_id, [el("p", {}, stamp(j.status), " ", el("span", {class: "mono muted"}, `attempt ${j.attempt || 1} · depth ${j.depth} · ${j.agent_id || ""}`)),
-    el("div", {class: "row"}, btn("← Back", () => { S.job = null; }), canWrite() && ["queued", "running", "claimed"].includes(j.status) ? btn("Cancel", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/cancel`, {}), "bad") : null, j.status === "held" && canWrite() ? btn("Approve retry", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/approve`, {resolution: "retry"})) : null),
+    el("div", {class: "row"}, btn("← Back", () => { S.job = null; }), canWrite() && ["queued", "running", "claimed"].includes(j.status) ? btn("Cancel", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/cancel`, {}), "bad") : null, j.status === "held" && isAdmin() ? btn("Approve retry", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/approve`, {resolution: "retry"})) : null, j.status === "held" && isAdmin() && String(j.error || "").includes("approval required for") ? btn("Refuse call", () => api("POST", `/v1/projects/${S.proj}/jobs/${j.job_id}/approve`, {resolution: "skip"}), "bad") : null),
     el("h3", {class: "faint"}, "Result"), el("pre", {}, res.text || j.error || res.error && JSON.stringify(res.error) || "(none yet)"),
     el("h3", {class: "faint"}, "Verification"), el("pre", {}, JSON.stringify(res.completion || {}, null, 2)),
     el("h3", {class: "faint"}, "Artifacts"), el("pre", {}, JSON.stringify(res.artifacts || [], null, 2)),
     j.trace ? el("p", {class: "mono muted"}, "trace " + j.trace) : null, el("p", {class: "mono muted gap"}, `tokens in/out ${u.prompt_tokens ?? "unknown"}/${u.completion_tokens ?? "unknown"} · tool calls ${u.tool_calls ?? "unknown"} · cost ${u.cost_usd == null ? "unknown" : "$" + u.cost_usd.toFixed(4)}`)], "pink"),
+    panel("Waterfall", tim ? waterfall(tim) : el("p", {class: "muted"}, "Timings unavailable."), "wide"),
     panel("Timeline", table(["when", "event", "worker"], ev.events.map((e) => ({cells: [when(e.ts), e.kind, e.worker || ""]}))), "cyan"),
     panel("Execution log", logs.outputs.map((x) => el("div", {}, el("p", {class: "mono muted"}, `${when(x.ts)} · ${x.tool}`), el("pre", {}, JSON.stringify(x.args), "\n", x.output))), "wide")];
   if ((j.children || []).length) nodes.push(panel("Delegated children", table(["job"], j.children.map((c) => ({id: c, cells: [el("span", {class: "mono"}, c)]})), (r) => { S.job = r.id; show(); }), "violet"));
@@ -135,9 +158,11 @@ async function agentsView() {
   const as = (await api("GET", `/v1/projects/${S.proj}/agents`)).agents;
   nodes.push(panel("Agents", table(["agent", "v", "model", "tools", "permissions"], as.map((a) => ({cells: [a.id, a.version, a.model_ref ? `${a.model_ref.endpoint}/${a.model_ref.model}` : "", a.tools ? a.tools.join(", ") : "all", JSON.stringify(a.permissions || {})]}))), "wide"));
   if (isAdmin()) nodes.push(panel("Define / update an agent", form([{name: "id", label: "Agent id", ph: "triage"}, {name: "system", label: "System prompt", area: true}, {name: "endpoint", label: "Model endpoint (logical name)", ph: "local"}, {name: "model", label: "Model", ph: "qwen3-1.7b"},
-    {name: "write", label: "May write files", type: "checkbox"}, {name: "web", label: "May fetch URLs", type: "checkbox"}, {name: "delegate", label: "Delegate to (comma separated agent ids, empty = none)", ph: "reviewer"}, {name: "secrets", label: "Secret names it may read (comma separated)", ph: "crm_token"}], "Save agent", async (v) => {
-      const list = (s) => s.split(",").map((x) => x.trim()).filter(Boolean); const perms = {write: v.write, web: v.web}; const d = list(v.delegate); if (d.length) perms.delegate = d; const sc = list(v.secrets); if (sc.length) perms.secrets = sc;
-      await api("PUT", `/v1/projects/${S.proj}/agents/${v.id}`, {system: v.system, permissions: perms, ...(v.endpoint && v.model ? {model_ref: {endpoint: v.endpoint, model: v.model}} : {})}); say("Agent saved"); }), "pink"));
+    {name: "write", label: "May write files", type: "checkbox"}, {name: "web", label: "May fetch URLs", type: "checkbox"}, {name: "delegate", label: "Delegate to (comma separated agent ids, empty = none)", ph: "reviewer"}, {name: "secrets", label: "Secret names it may read (comma separated)", ph: "crm_token"}, {name: "approve", label: "Ask an admin before these tools (blank = keep current, none = never ask)", ph: "write_file, fetch_url, delegate, memory_put"}], "Save agent", async (v) => {
+      const list = (s) => s.split(",").map((x) => x.trim()).filter(Boolean); const old = as.find((a) => a.id === v.id) || {}; const kept = Object.fromEntries(["name", "system", "tools", "limits", "engine", "description", "model_ref"].filter((k) => old[k] != null).map((k) => [k, old[k]]));      // an update must not silently drop what this form does not edit
+      const perms = {...(old.permissions || {}), write: v.write, web: v.web}; for (const k of ["delegate", "secrets"]) { const x = list(v[k]); if (x.length) perms[k] = x; else delete perms[k]; }
+      const ask = list(v.approve); if (ask.length === 1 && ask[0] === "none") delete perms.approve; else if (ask.length) perms.approve = ask;
+      await api("PUT", `/v1/projects/${S.proj}/agents/${v.id}`, {...kept, ...(v.system ? {system: v.system} : {}), permissions: perms, ...(v.endpoint && v.model ? {model_ref: {endpoint: v.endpoint, model: v.model}} : {})}); say("Agent saved"); }), "pink"));
   return nodes;
 }
 async function schedulesView() {
@@ -199,13 +224,29 @@ async function auditView() {
   return [panel("Audit log", [el("p", {class: a.chain_ok ? "" : "bad"}, stamp(a.chain_ok ? "ok" : "bad"), a.chain_ok ? " hash chain verified" : " CHAIN BROKEN at row " + a.first_bad), table(["when", "actor", "action", "detail"], a.rows.slice().reverse().map((r) => ({cells: [when(r.ts), r.actor, r.action, JSON.stringify(r.detail)]})))], "wide")];
 }
 const VIEWS = {overview, jobs: jobsView, agents: agentsView, schedules: schedulesView, workers: workersView, billing: billingView, secrets: secretsView, team: teamView, keys: keysView, security: securityView, audit: auditView};
-async function show() {
-  if (!S.me) { v.replaceChildren(...loginView()); return; }
+// A re-render builds new form fields. Keep what the user has typed (marked dirty by the listeners below) for the same tab, project, job and panel.
+const typing = () => document.activeElement.matches("input,textarea,select");
+function fields() {
+  return [...v.querySelectorAll("section.panel")].flatMap((p) => [...p.querySelectorAll("input,textarea,select")].map((i, n) => [`${v.dataset.at}|${p.querySelector("h2").textContent}|${n}`, i]));
+}
+for (const kind of ["input", "change"]) v.addEventListener(kind, (e) => { e.target.dataset.dirty = "1"; });
+let renderSeq = 0;
+function render(nodes, at) {
+  const drafts = new Map(fields().filter(([, i]) => i.dataset.dirty).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value]));
+  v.dataset.at = at; v.replaceChildren(...nodes);
+  for (const [k, i] of fields()) if (drafts.has(k)) { if (i.type === "checkbox") i.checked = drafts.get(k); else i.value = drafts.get(k); i.dataset.dirty = "1"; }
+}
+async function show(auto) {
+  const seq = ++renderSeq;          // only the newest render may paint: a slow one for a tab the user already left is dropped
+  if (!S.me) { v.dataset.at = ""; v.replaceChildren(...loginView()); return; }
   if (S.me.role === "enrol") { S.tab = "security"; }
-  try { v.replaceChildren(...(await VIEWS[S.tab]())); } catch (e) { if (S.me) v.replaceChildren(panel("Houston, we have a problem", el("div", {class: "bubble bad"}, e.message), "wide pink")); }
+  let nodes;
+  try { nodes = await VIEWS[S.tab](); } catch (e) { if (!S.me) return; nodes = [panel("Houston, we have a problem", el("div", {class: "bubble bad"}, e.message), "wide pink")]; }
+  if (seq !== renderSeq || !S.me || (auto && typing())) return;
+  render(nodes, `${S.tab}|${S.proj}|${S.job}`);
 }
 $("#out").addEventListener("click", async () => { try { if (S.me && S.me.user) await api("POST", "/v1/auth/logout", {}); } catch (_) {} signOut(); });
-setInterval(() => { if (S.me && ["overview", "jobs", "workers"].includes(S.tab) && !document.hidden && !document.activeElement.matches("input,textarea,select")) show(); }, 5000);
+setInterval(() => { if (S.me && ["overview", "jobs", "workers"].includes(S.tab) && !document.hidden && !typing()) show(true); }, 5000);
 function readLink() {
   const m = /^#\/(accept|reset)\?token=([A-Za-z0-9_\-]{10,120})$/.exec(location.hash || "");
   if (m) { S.link = {kind: m[1], token: m[2]}; history.replaceState(null, "", location.pathname); }          // the one-time token never stays in the address bar / history

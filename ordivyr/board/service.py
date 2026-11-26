@@ -33,7 +33,7 @@ PLANS = {   # quota profiles (not prices): nothing here charges anyone. `max_act
     "scale": {"max_active": 128, "max_queued": 20000, "max_projects": 250, "monthly_jobs": 500000, "max_depth": 4, "max_fanout": 16, "max_descendants": 1000, "max_workers": 200},
 }
 AGENT_KEYS = {"name", "system", "tools", "permissions", "model_ref", "limits", "engine", "description"}
-PERM_KEYS = {"write", "web", "terminal", "delegate", "memory", "secrets"}
+PERM_KEYS = {"write", "web", "terminal", "delegate", "memory", "secrets", "approve"}
 MEM_MAX_VALUE, MEM_MAX_ENTRIES = 16_384, 5000
 _TASK_UNSET = object()
 
@@ -188,7 +188,11 @@ class Board(AccountsMixin, SpendingMixin, OpsMixin, MailMixin, ReliabilityMixin)
         if not (isinstance(d, bool) or (isinstance(d, list) and all(isinstance(x, str) for x in d))): raise Invalid("permissions.delegate is bool or a list of agent ids")
         sc = perms.get("secrets", [])
         if not (isinstance(sc, list) and len(sc) <= 20 and all(isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", x) for x in sc)): raise Invalid("permissions.secrets is a list of up to 20 secret NAMES")
+        ap = perms.get("approve", [])
+        from . import gate as G
+        if not (isinstance(ap, list) and all(isinstance(x, str) and x in G.GATEABLE for x in ap)): raise Invalid(f"permissions.approve is a list drawn from {sorted(G.GATEABLE)}")
         a["permissions"] = perms; a.setdefault("engine", "ordivyr")
+        if ap and a["engine"] != "ordivyr": raise Invalid("permissions.approve is only enforced by the ordivyr engine")
         if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,31}", str(a["engine"])): raise Invalid("engine id invalid")
         probe = {"contract_version": C.CONTRACT_VERSION, "job_id": "probe", "org": "probe", "project": "probe", "prompt": "x", "agent": {"id": "probe", **{k: a[k] for k in ("system", "tools", "permissions") if k in a}},
                  "model_ref": a.get("model_ref"), "limits": a.get("limits") or {}}
@@ -258,6 +262,13 @@ class Board(AccountsMixin, SpendingMixin, OpsMixin, MailMixin, ReliabilityMixin)
             c.execute("INSERT INTO workers(id,org,project,engine,caps,kid,node,registered) VALUES(?,?,?,?,?,?,?,?)", (wid, org, project, engine, _j(caps), kid, node, self.clock()))
             self.db.audit(p.actor, "worker.register", org, project, {"worker": wid, "engine": engine, "node": node, "pool": platform}, c)
         return {"worker": wid, "token": tok, "engine": engine, "kinds": [f"board.{engine}"]}
+
+    def claim_kinds(self, pr):
+        """Queue kinds this worker may claim, from what it REGISTERED (never from what it asks for)."""
+        from . import gate as G
+        r = self._worker_row(pr["wid"]); kinds = [f"board.{pr['engine']}"]
+        if r is not None and pr["engine"] == "ordivyr" and G.FEATURE in (json.loads(r["caps"]).get("features") or ()): kinds.append(f"board.{pr['engine']}.gated")
+        return kinds
 
     def _worker_row(self, wid): return self.db.c().execute("SELECT * FROM workers WHERE id=?", (wid,)).fetchone()
 
@@ -419,7 +430,8 @@ class Board(AccountsMixin, SpendingMixin, OpsMixin, MailMixin, ReliabilityMixin)
         """Make sure the Board row has its queue task (idempotent: the queue dedups on job_id within the tenant)."""
         if row["tid"] is not None: return None
         spec = json.loads(row["spec"])
-        try: tid = self.store.submit(f"board.{row['engine']}", spec, idem_key=row["job_id"], max_attempts=3, priority=row["prio"], tenant=tenant_of(row["org"], row["project"]))
+        from . import gate as G
+        try: tid = self.store.submit(G.queue_kind(row["engine"], spec), spec, idem_key=row["job_id"], max_attempts=3, priority=row["prio"], tenant=tenant_of(row["org"], row["project"]))
         except D.QuotaExceeded:
             if strict: raise
             return None
@@ -455,6 +467,38 @@ class Board(AccountsMixin, SpendingMixin, OpsMixin, MailMixin, ReliabilityMixin)
     def job_events(self, p, project, job_id):
         self._scope(p, project, "read"); r = self._row(p.org, project, job_id)
         return [{"ts": e["ts"], "kind": e["kind"], "worker": e["worker"], "node": e["node"], "detail": json.loads(e["detail"]) if e["detail"] else None} for e in self.store.history(r["tid"])] if r["tid"] else []
+
+    def job_stream(self, p, project, job_id, emit, alive=lambda: True, poll=0.5, max_s=300.0, after=0):
+        """Live telemetry for one job: calls emit(event, data) for every new lifecycle event and tool/step output as it lands (polled from the durable store, so it works
+        across processes), then a final `end` with the job view. Authorisation happens once, up front; the stream stops on a terminal status, a dead client or max_s."""
+        self._scope(p, project, "read"); r = self._row(p.org, project, job_id); seen_ev = 0; t0 = time.monotonic(); last = None
+        while alive() and time.monotonic() - t0 < max_s:
+            r = self._row(p.org, project, job_id)                     # re-read: a job not yet dispatched has no task id when the stream opens
+            v = self.job_view(r)                                      # status BEFORE events: whatever finished the job is then already readable below
+            if r["tid"] is not None:
+                ev = self.job_events(p, project, job_id)
+                for e in ev[seen_ev:]: emit("event", e)
+                seen_ev = len(ev)
+                while True:                                           # drain fully, so the `end` event never cuts off a backlog
+                    batch = self.store.task_outputs(r["tid"], after, 200)
+                    for o in batch: after = max(after, o["id"]); emit("step", o)
+                    if len(batch) < 200 or not alive(): break
+            if v["status"] != last: last = v["status"]; emit("status", {"status": v["status"], "phase": v.get("phase"), "attempt": v.get("attempt")})
+            if v["status"] in ("completed", "failed", "cancelled"): emit("end", v); return v
+            time.sleep(poll)
+        emit("end", {"status": last, "truncated": True}); return None
+
+    def job_timings(self, p, project, job_id, cap=100):
+        """Phase timeline for this job's whole delegation tree (same root), at most `cap` jobs. One history query per job, on demand only (never inside job_view/list_jobs)."""
+        from . import timings as TM
+        self._scope(p, project, "read"); r = self._row(p.org, project, job_id); now = self.clock()
+        rows = self.db.c().execute("SELECT * FROM jobs WHERE org=? AND project=? AND root=? ORDER BY created, rowid LIMIT ?", (p.org, project, r["root"], cap)).fetchall()
+        tasks = self.store.get_many(x["tid"] for x in rows if x["tid"] is not None); out = []
+        for x in rows:
+            v = self.job_view(x, task=tasks.get(x["tid"])); seg = TM.segments(x["created"], [{"ts": e["ts"], "kind": e["kind"], "detail": json.loads(e["detail"]) if e["detail"] else None} for e in self.store.history(x["tid"])] if x["tid"] is not None else [], now)
+            ots = getattr(self.store, "task_output_ts", None); ticks = ([] if x["tid"] is None else ots(x["tid"], 200) if ots else [o["ts"] for o in self.store.task_outputs(x["tid"], 0, 200)])
+            out.append({"job_id": x["job_id"], "parent": x["parent"], "depth": x["depth"], "agent": x["agent_id"], "status": v["status"], "created": x["created"], "ticks": ticks, **seg})
+        return {"root": r["root"], "jobs": out, "truncated": len(rows) >= cap and self.db.c().execute("SELECT COUNT(*) FROM jobs WHERE org=? AND project=? AND root=?", (p.org, project, r["root"])).fetchone()[0] > cap}
 
     def job_outputs(self, p, project, job_id, after=0, limit=100):
         self._scope(p, project, "read")
@@ -530,6 +574,8 @@ class Board(AccountsMixin, SpendingMixin, OpsMixin, MailMixin, ReliabilityMixin)
     @staticmethod
     def _escalates(parent_perms, child_perms):
         rank = {"none": 0, "read": 1, "write": 2}
+        from . import gate as G
+        if not G.gated({"agent": {"permissions": parent_perms}}) <= G.gated({"agent": {"permissions": child_perms}}): return True          # dropping an approval gate is gaining capability
         if child_perms.get("write") and not parent_perms.get("write"): return True
         if child_perms.get("web") and not parent_perms.get("web"): return True
         if child_perms.get("terminal", "none") not in ("none", None, False, "") and parent_perms.get("terminal", "none") in ("none", None, False, ""): return True

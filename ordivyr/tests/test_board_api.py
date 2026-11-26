@@ -29,7 +29,7 @@ def test_full_flow_and_cross_org_isolation_over_http(w):
     s, j, _ = call(w, "POST", "/v1/projects/p1/jobs", ka, {"prompt": "go [[hello]]", "agent_id": "ag"}); assert s == 200; jid = j["job_id"]
     v = __import__("ordivyr.tests.board_support", fromlist=["wait_for"]).wait_for(lambda: (lambda r: r if r["status"] == "completed" else None)(call(w, "GET", f"/v1/projects/p1/jobs/{jid}", ka)[1]), 20)
     assert v["result"]["text"] == "hi"
-    for method, path, body in (("GET", f"/v1/projects/p1/jobs/{jid}", None), ("POST", f"/v1/projects/p1/jobs/{jid}/cancel", {}), ("GET", f"/v1/projects/p1/jobs/{jid}/events", None)):
+    for method, path, body in (("GET", f"/v1/projects/p1/jobs/{jid}", None), ("POST", f"/v1/projects/p1/jobs/{jid}/cancel", {}), ("GET", f"/v1/projects/p1/jobs/{jid}/events", None), ("GET", f"/v1/projects/p1/jobs/{jid}/timings", None)):
         s, r, _ = call(w, method, path, kb, body); assert s == 404 and r["error"]["code"] == "not_found", (path, s, r)        # same project name, other org: not found, not forbidden
     assert call(w, "GET", "/v1/projects/p1/jobs", kb)[1]["jobs"] == []
     sm, mk, _ = call(w, "POST", "/v1/keys", ka, {"role": "member", "project": "p1"}); assert sm == 200 and call(w, "GET", "/v1/projects/p1/jobs", mk["key"])[0] == 200
@@ -72,3 +72,34 @@ def test_hooks_over_http_and_no_secret_in_listings(w):
 
 def test_public_bind_is_refused_without_the_flag(w):
     with pytest.raises(SystemExit): A.serve(w.board, host="0.0.0.0", port=0)
+
+
+def test_sse_stream_delivers_steps_and_end_and_hides_other_orgs(w):
+    pt, ka, kb = setup(w)
+    s, j, _ = call(w, "POST", "/v1/projects/p1/jobs", ka, {"prompt": "go [[hello]]", "agent_id": "ag"}); jid = j["job_id"]
+    req = urllib.request.Request(w.api + f"/v1/projects/p1/jobs/{jid}/stream", headers={"Authorization": "Bearer " + ka})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        assert r.headers["Content-Type"] == "text/event-stream"; body = r.read().decode()
+    assert "event: status" in body and "event: end" in body and '"completed"' in body
+    s, r, _ = call(w, "GET", f"/v1/projects/p1/jobs/{jid}/stream", kb); assert s == 404          # other org: JSON 404, no stream
+    s, r, _ = call(w, "GET", f"/v1/projects/p1/jobs/{jid}/stream"); assert s == 401
+
+
+def test_sse_stream_slots_are_released_after_each_stream(w):
+    """Sequential streams beyond MAX_STREAMS must all succeed (no slot leak). The 429 branch itself is not exercised here."""
+    pt, ka, kb = setup(w)
+    s, j, _ = call(w, "POST", "/v1/projects/p1/jobs", ka, {"prompt": "go [[hello]]", "agent_id": "ag"}); jid = j["job_id"]
+    for _ in range(6):
+        req = urllib.request.Request(w.api + f"/v1/projects/p1/jobs/{jid}/stream", headers={"Authorization": "Bearer " + ka})
+        with urllib.request.urlopen(req, timeout=20) as r: assert r.status == 200; r.read()
+
+
+def test_timings_endpoint_segments_are_contiguous_and_cover_wall_time(w):
+    pt, ka, kb = setup(w)
+    s, j, _ = call(w, "POST", "/v1/projects/p1/jobs", ka, {"prompt": "go [[hello]]", "agent_id": "ag"}); jid = j["job_id"]
+    __import__("ordivyr.tests.board_support", fromlist=["wait_for"]).wait_for(lambda: call(w, "GET", f"/v1/projects/p1/jobs/{jid}", ka)[1]["status"] == "completed" or None, 20)
+    s, t, _ = call(w, "GET", f"/v1/projects/p1/jobs/{jid}/timings", ka); assert s == 200 and t["jobs"]
+    jb = [x for x in t["jobs"] if x["job_id"] == jid][0]; sg = jb["segments"]; assert sg and not jb["purged"] and [x["phase"] for x in sg][0] == "queued" and "running" in [x["phase"] for x in sg]
+    assert all(x["end"] >= x["start"] for x in sg) and all(a["end"] == b["start"] for a, b in zip(sg, sg[1:])) and not sg[-1]["open"]
+    assert abs(sg[0]["start"] - jb["created"]) < 1e-6
+    assert call(w, "GET", f"/v1/projects/p1/jobs/{jid}/timings", kb)[0] == 404

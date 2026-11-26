@@ -71,9 +71,52 @@ class FairRLock:
             else: self._owner = None
 
 
+class _Lease:
+    """Held in a thread-local: when its thread dies the connection goes back to the pool."""
+    def __init__(self, pool, c): self.pool, self.c, self.pid = pool, c, os.getpid()
+    def __del__(self):
+        if os.getpid() != self.pid: return          # a forked child never touches the parent's connections
+        try: self.pool.put(self.c)
+        except Exception: pass
+
+
+class SqlitePool:
+    """Connections are reused across short-lived threads (one per HTTP request). Opening one per request cost three PRAGMAs each time and, because SQLite
+    cannot close a file descriptor while another connection in the process holds a lock on the file, left descriptors piling up under load."""
+    def __init__(self, path, keep=64):
+        self.path, self.keep = str(path), keep; self.all = set(); self.idle = []; self.pid = os.getpid(); self._lock = threading.RLock()      # reentrant: garbage collection may run _Lease.__del__ while this thread holds it
+
+    def lease(self):
+        """-> (connection, token). Keep the token in the same thread-local as the connection."""
+        with self._lock:
+            if self.pid != os.getpid(): self._orphans, self.idle, self.all, self.pid = self.all, [], set(), os.getpid()      # keep them referenced: closing in a fork could drop the parent's locks
+            c = self.idle.pop() if self.idle else None
+        if c is None:
+            c = sqlite3.connect(self.path, timeout=60, isolation_level=None, check_same_thread=False); c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA synchronous=FULL"); c.execute("PRAGMA busy_timeout=60000")
+            with self._lock: self.all.add(c)
+        return c, _Lease(self, c)
+
+    def put(self, c):
+        with self._lock:
+            if c not in self.all: return
+            try:
+                if c.in_transaction: c.execute("ROLLBACK")      # a thread that died mid-transaction must not pass it on
+                c.total_changes                                  # raises if the connection was closed
+                if len(self.idle) < self.keep: self.idle.append(c); return
+            except sqlite3.Error: pass
+            self.all.discard(c)
+        c.close()
+
+    def close(self):
+        with self._lock: cs, self.all, self.idle = self.all, set(), []
+        for c in cs: c.close()
+
+
 class Store:
     def __init__(self, path, clock=time.time):
         self.path = str(path); self.clock = clock; self._tl = threading.local(); self._gate = FairRLock(); self._read_gate = threading.Lock(); self.tx_count = 0; self._cv = threading.Condition(); self._ver = 0; self._added = 0; os.makedirs(os.path.dirname(os.path.abspath(self.path)) or ".", exist_ok=True)
+        self._pool = SqlitePool(self.path)
         c = self._conn(); c.executescript(SCHEMA)
         if not any(r[1] == "tenant" for r in c.execute("PRAGMA table_info(tasks)")):      # pre-tenancy database: add the column in place (existing tasks belong to 'default')
             c.execute("ALTER TABLE tasks ADD COLUMN tenant TEXT NOT NULL DEFAULT 'default'")
@@ -82,9 +125,7 @@ class Store:
 
     def _conn(self):
         c = getattr(self._tl, "c", None)
-        if c is None:
-            c = sqlite3.connect(self.path, timeout=60, isolation_level=None); c.row_factory = sqlite3.Row
-            c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA synchronous=FULL"); c.execute("PRAGMA busy_timeout=60000"); self._tl.c = c
+        if c is None: c, self._tl.lease = self._pool.lease(); self._tl.c = c
         return c
 
     @contextlib.contextmanager
@@ -340,6 +381,10 @@ class Store:
 
     def record_output(self, tid, fence, tool, args, output):
         with self.tx() as c: self._own(c, tid, fence, ACTIVE); c.execute("INSERT INTO outputs(task_id,fence,ts,tool,args,output) VALUES(?,?,?,?,?,?)", (tid, fence, self.clock(), tool, _j(args), str(output)[:20000]))
+
+    def task_output_ts(self, tid, limit=200):
+        """Timestamps only (the waterfall's tick marks) - never loads tool output text."""
+        return [r[0] for r in self._conn().execute("SELECT ts FROM outputs WHERE task_id=? ORDER BY id LIMIT ?", (tid, max(1, min(int(limit), 200))))]
 
     def task_outputs(self, tid, after=0, limit=100):
         rows = self._conn().execute("SELECT * FROM outputs WHERE task_id=? AND id>? ORDER BY id LIMIT ?",

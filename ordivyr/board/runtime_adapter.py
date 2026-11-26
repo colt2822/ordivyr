@@ -11,7 +11,7 @@ from .. import durable as D, durable_worker as W
 from . import contract as C
 
 ENGINE_TOOLS = ["list_files", "read_file", "grep", "find_files", "edit_file", "write_file", "fetch_url", "delegate", "child_results", "memory_get", "memory_list", "memory_put"]
-FEATURES = ["cancel", "checkpoint", "validators", "delegate"]
+FEATURES = ["cancel", "checkpoint", "validators", "delegate", "approval_gate"]
 _SPECS = {
     "delegate": ("Hand a sub-task to another agent in this project. Returns the child job id; use child_results to collect it.", {"agent": ("string", "agent id from your delegation list"), "prompt": ("string", "the sub-task"), "engine": ("string", "optional engine"), "key": ("string", "optional dedupe key")}, ["agent", "prompt"]),
     "child_results": ("Status and answers of the jobs you delegated. wait_s (max 60) waits for all of them.", {"wait_s": ("number", "seconds to wait, default 0")}, []),
@@ -23,7 +23,7 @@ _SPECS = {
 
 def capabilities(max_concurrency=2, endpoints=(), validators=True, engine="ordivyr", isolation="process"):
     """`validators=False` for shared/pool workers: submitter-supplied validator commands then never reach them."""
-    return C.capabilities(engine, ENGINE_TOOLS, max_concurrency, [f for f in FEATURES if validators or f != "validators"], "gateway", endpoints=endpoints, isolation=isolation)
+    return C.capabilities(engine, ENGINE_TOOLS, max_concurrency, [f for f in FEATURES if (validators or f != "validators") and (engine == "ordivyr" or f != "approval_gate")], "gateway", endpoints=endpoints, isolation=isolation)
 
 
 class BoardTools:
@@ -65,10 +65,12 @@ def check_job(job):
     return job["model_ref"]
 
 
-def execute_job(job, wd, gateway, on_step, tools_client, run_validator, record_evidence=lambda *a: None, started=None):
+def execute_job(job, wd, gateway, on_step, tools_client, run_validator, record_evidence=lambda *a: None, started=None, gate=None):
     """The execution core shared by the in-process handler and the sandboxed job runner. Pure w.r.t. the host: everything it touches arrives as an argument.
     gateway.chat(...) and tools_client.call(...) may be local objects or RPC proxies; run_validator(v) -> (rc, out)."""
     from ..selfhost.agents import run_agent
+    from . import gate as G
+    if G.gated(job) and gate is None: raise D.NeedsApproval("needs_owner: this runtime was given no approval gate; refusing to run a gated job")
     t0 = started or time.time(); mr = job["model_ref"]; ag = job["agent"]; perms = ag.get("permissions") or {}; lim = job.get("limits") or {}
     agent = {"id": f"{job['org']}.{job['project']}.{ag['id']}", "name": ag.get("name") or ag["id"], "system": ag.get("system") or "You are a careful assistant. Use tools when they help.", "endpoint": mr["endpoint"], "model": mr["model"],
              "tools": ag.get("tools"), "permissions": {"write": bool(perms.get("write")), "web": bool(perms.get("web")), "terminal": "none"},
@@ -77,7 +79,7 @@ def execute_job(job, wd, gateway, on_step, tools_client, run_validator, record_e
     def step(name, args, out):
         if name in C.WRITE_TOOLS and not str(out).startswith("ERROR"): wrote[0] = True
         on_step(name, args, out)
-    res = run_agent(agent, job["prompt"], wd, gateway, None, on_step=step, task_id=job["job_id"], board=job["job_id"], mcp=tools_client.table() if tools_client else None)
+    res = run_agent(agent, job["prompt"], wd, gateway, None, on_step=step, task_id=job["job_id"], board=job["job_id"], mcp=tools_client.table() if tools_client else None, gate=gate)
     tests = None; evid = []
     for v in job.get("validators") or []:
         rc, out = run_validator(v); ok = rc == 0; record_evidence(v["name"], ok, out[-2000:]); evid.append({"name": v["name"], "ok": ok, "detail": out[-300:]}); tests = ok if tests is None else (tests and ok)
@@ -106,8 +108,10 @@ def board_handler(ctx):
     def on_step(name, args, out): ctx.check(); ctx.write({"op": "output", "tool": name, "args": args, "output": str(out)[:2000]})
     def validate(v):
         ctx.check(); return W._run(ctx, W._argv(v["cmd"]), wd, v.get("timeout", 60), W._env())
-    try: r, tests = execute_job(job, wd, Gateway(home), on_step, BoardTools(ctx, job), validate, lambda n, ok, d: ctx.store.add_evidence(ctx.tid, ctx.fence, n, ok, d), t0)
+    from . import gate as G
+    g = G.for_ctx(ctx, job)
+    try: r, tests = execute_job(job, wd, Gateway(home), on_step, BoardTools(ctx, job), validate, lambda n, ok, d: ctx.store.add_evidence(ctx.tid, ctx.fence, n, ok, d), t0, gate=g.check if g else None)
     except GatewayError as e: raise map_gateway_error(e.code, e, e.retryable)
-    ctx.check(); ctx.write({"op": "checkpoint", "phase": "generated", "data": {"stop": r["stop"], "turns": r["usage"]["turns"]}}, {"op": "begin", "phase": "validating"})
+    ctx.check(); ctx.write({"op": "checkpoint", "phase": "generated", "data": {"stop": r["stop"], "turns": r["usage"]["turns"], **({"decided": g.decided} if g else {})}}, {"op": "begin", "phase": "validating"})
     if tests is False: raise W.ValidationFailed("validation_failed: " + "; ".join(e["name"] for e in r["evidence"] if not e["ok"]))
     return r, None

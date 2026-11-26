@@ -15,8 +15,16 @@ from .durable_net import RemoteError, RemoteStore
 class ValidationFailed(Exception): pass
 
 def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+SKIP_DIRS = {".git"}          # integrity-critical (resume check + pre-promotion hash): only VCS metadata is excluded, exactly as before
 def manifest(d):
-    d = Path(d); return {str(f.relative_to(d)): sha(f) for f in sorted(d.rglob("*")) if f.is_file() and ".git" not in f.parts}
+    """sha256 of every file under d (VCS metadata excluded)."""
+    d = Path(d); out = {}
+    for root, dirs, files in os.walk(d):
+        dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS)
+        for f in sorted(files):
+            p = Path(root) / f
+            if p.is_file(): out[str(p.relative_to(d))] = sha(p)
+    return dict(sorted(out.items()))
 
 class Ctx:
     def __init__(self, store, task, worker, node, ws, ttl, selfabort=True, batch=True):

@@ -1,6 +1,6 @@
 """python -m ordivyr.board up --home H [--port 8870] [--lease-port 8871] [--gateway-home G --local-worker]   |   org-create --home H --id acme [--plan team]"""
 from __future__ import annotations
-import argparse, json, os, signal, sys, threading
+import argparse, json, os, shlex, signal, sys, threading
 from pathlib import Path
 from .service import Board
 from .api import serve
@@ -46,6 +46,7 @@ def main(argv=None):
                 auth = (a.authorize_daily_usd, a.authorize_total_usd) if a.authorize_daily_usd and a.authorize_total_usd else None
                 state = bootstrap.initialize(a.home, a.model, a.base_url, a.slots, a.key_file, a.protocol, a.engine, auth)
                 print(json.dumps({k: state[k] for k in ("created", "org", "project", "engine", "model", "slots", "admin_token_file")}, indent=2))
+                print(f"next: ordivyr-board up --home {shlex.quote(str(Path(a.home).expanduser()))}", file=sys.stderr)
                 return 0
             report = bootstrap.status(a.home, require_lite=a.lite_worker)
             print(json.dumps(report, indent=2)); return 0 if report["ok"] else 2
@@ -101,6 +102,8 @@ def main(argv=None):
         board.allow_unsandboxed_pool = a.unsafe_unsandboxed_pool
         r = board.register_worker(plat, "ordivyr", RA.capabilities(4, (), validators=True, isolation=SB.ISOLATION if sbx else "process"), platform=True, node="board-local")
         ws = Path(a.home) / "ws"; ws.mkdir(exist_ok=True); threading.Thread(target=BW.run, args=(board.lease_url, r["token"], "board-local", str(ws), "ordivyr", 4, 6.0, stop), kwargs={"sandbox": sbx}, daemon=True).start()
+    admin_key = Path(a.home).expanduser() / "admin.token"
+    if admin_key.is_file(): print(f"Board is ready. Open {scheme}://{a.host}:{srv.server_address[1]} and sign in with 'Or paste an API key' using the key in {admin_key}", file=sys.stderr, flush=True)
     print(json.dumps({"api": f"{scheme}://{a.host}:{srv.server_address[1]}", "lease_api": f"{scheme}://{a.host}:{coord.port}", "platform_token_file": str(Path(a.home) / "platform.token"), "first_start": bool(first)}), flush=True)
     signal.signal(signal.SIGTERM, lambda *_: stop.set()); signal.signal(signal.SIGINT, lambda *_: stop.set()); stop.wait(); board.stop_loop(); board.fleet_shutdown(); srv.shutdown(); coord.stop(); return 0
 

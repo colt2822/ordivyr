@@ -57,6 +57,16 @@ def _compact_threshold():
     except ValueError: return COMPACT_AT
 
 
+SPIN_REPEATS = 3          # a cycle of 2-3 distinct calls repeating this many times with unchanged results is a spin
+PATH_FAIL_NUDGE, PATH_FAIL_STOP = 3, 6      # failing edits to the SAME path with varying arguments
+
+def _spin_cycle(hist):
+    """hist = [(name, args_json, out_hash)]. -> True when the tail is a period-2/3 cycle repeated SPIN_REPEATS times (the identical-call counter misses A,B,A,B,... loops)."""
+    for per in (2, 3):
+        n = per * SPIN_REPEATS
+        if len(hist) >= n and len({h for h in hist[-per:]}) == per and all(hist[-n + i] == hist[-n + i % per] for i in range(n)): return True
+    return False
+
 def _checkpoint_text(turns, trail, errors):
     """Deterministic (no model call) structured summary, written only when the history is compacted."""
     def uniq(names): return sorted({p for n, p in trail if n in names and p})
@@ -115,6 +125,9 @@ class ToolError(Exception): pass
 
 
 # --------------------------------------------------------------------------- built-in tools
+from . import scopes as SC
+
+
 class ToolBox:
     def __init__(self, root: Path, write=False, web=False, ask=True, mcp=None, terminals=None):
         self.terminals = terminals; self.root = Path(os.path.realpath(root)); self.write = write; self.web = web; self.ask = ask; self.mcp = mcp or {}; self.question = None; self._spill = None; self._nspill = 0
@@ -174,6 +187,10 @@ class ToolBox:
 
     def call(self, name, args):
         """Run one tool. Results over MAX_RESULT keep head and tail; the whole output is saved task-locally as spill:N (read_file can page it)."""
+        sc = getattr(self, "scope", None)
+        if sc and not SC.allowed(sc, name): return f"ERROR: tool '{name}' is outside the '{sc}' scope"          # harness-enforced least privilege
+        gate = getattr(self, "gate", None); refused = gate(name, args) if gate else None          # owner approval: may raise to park the job
+        if refused: return refused
         out = self._call(name, args)
         return out if name == "read_file" else FT.retain(self, out, MAX_RESULT)
 
@@ -387,7 +404,9 @@ def run(protocol, base, key, model, system, prompt, box: ToolBox, http=None, tim
 
     def total(): return st["input_tokens"] + st["cached_input_tokens"] + st["cache_write_tokens"] + st["output_tokens"]
 
+    spin_hist = []; spin_nudged = False; path_fails = {}
     while True:
+        if token_budget and st["billable_tokens"] >= token_budget: return (text or "") + "\n\n[stopped: token budget reached before the next model call]", total(), used, steps, "budget"      # fail-closed pre-flight
         tries = 0
         while True:
             try:
@@ -451,7 +470,7 @@ def run(protocol, base, key, model, system, prompt, box: ToolBox, http=None, tim
             elif c["id"] in outs: results.append((c, outs[c["id"]]))
             else: results.append((c, "ERROR: not executed - the tool-call limit for this run was reached"))
         if tn.truncated: st["truncated_turns"] += 1
-        stuck = False
+        stuck = False; stuck_why = f"the same tool call failed {FAIL_STOP} times"
         for i, (c, out) in enumerate(results):
             if c["id"] not in outs: continue
             if isinstance(out, str) and out.startswith("ERROR"):
@@ -459,6 +478,20 @@ def run(protocol, base, key, model, system, prompt, box: ToolBox, http=None, tim
                 if fails[k] >= FAIL_STOP: stuck = True
                 elif fails[k] == FAIL_NUDGE: results[i] = (c, out + f"\n[this identical call has now failed {fails[k]} times - change your approach instead of repeating it]")
             elif c["name"] in ("write_file", "edit_file") and isinstance(c.get("args"), dict) and c["args"].get("path"): wrote.append(str(c["args"]["path"]))
+        for c, out in results:
+            if c["id"] not in outs: continue
+            a_ = c.get("args") if isinstance(c.get("args"), dict) else {}
+            spin_hist.append((c["name"], json.dumps(a_, sort_keys=True, default=str), hash(out if isinstance(out, str) else str(out))))
+            pk = (c["name"], str(a_.get("path") or ""))
+            if pk[1] and isinstance(out, str) and out.startswith("ERROR"):
+                path_fails[pk] = path_fails.get(pk, 0) + 1
+                if path_fails[pk] >= PATH_FAIL_STOP: stuck = True; stuck_why = f"{c['name']} on {pk[1]} failed {PATH_FAIL_STOP} times with varying arguments"
+                elif path_fails[pk] == PATH_FAIL_NUDGE: results[[r[0]["id"] for r in results].index(c["id"])] = (c, out + f"\n[{c['name']} on {pk[1]} has failed {path_fails[pk]} times with different arguments - re-read the file and change your approach]")
+        spin = _spin_cycle(spin_hist)
+        if spin and spin_nudged: stuck = True; stuck_why = "the model alternated between the same tool calls with unchanged results"
+        elif spin:
+            spin_nudged = True; st["spin_nudges"] = st.get("spin_nudges", 0) + 1; c0, o0 = results[-1]
+            results[-1] = (c0, str(o0) + "\n[you are alternating between the same calls with the same results - stop and try a different approach]")
         if protocol == "openai": new = [{"role": "tool", "tool_call_id": c["id"], "content": out} for c, out in results]; msgs += new
         else: new = [{"type": "tool_result", "tool_use_id": c["id"], "content": out} for c, out in results]; msgs.append({"role": "user", "content": new})
         for (c, out), d in zip(results, new):
@@ -471,7 +504,7 @@ def run(protocol, base, key, model, system, prompt, box: ToolBox, http=None, tim
         if prune and st["context_tokens"] >= _compact_threshold():          # context pressure: one batch rewrite (a cache miss paid once), not a rewrite every turn
             cut = prune_stale(msgs, protocol); st["pruned_chars"] += cut
             if cut: st["compactions"] += 1; seen.clear(); _set_checkpoint(msgs, protocol, _checkpoint_text(steps, trail, errors))
-        if stuck: return (text or "") + f"\n\n[stopped: the same tool call failed {FAIL_STOP} times]", tokens, used, steps, "repeat_failure"
+        if stuck: return (text or "") + f"\n\n[stopped: {stuck_why}]", tokens, used, steps, "repeat_failure"
         if box.question: return "QUESTION: " + box.question, tokens, used, steps, "question"
         # bounded correction: a turn whose every call was refused counts toward MAX_BAD_TURNS; the identical malformed call twice is a loop
         if not runnable and calls:

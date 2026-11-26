@@ -44,7 +44,7 @@ def test_cross_tenant_matrix_every_route_returns_404_never_403_or_data(w):
     human(w, a, "m@a.com"); uid = [m["user"] for m in w.board.members(a) if m["email"] == "m@a.com"][0]
     bk = w.board.issue_key(b, "admin")["key"]; srv = serve(w.board); url = f"http://127.0.0.1:{srv.server_address[1]}"; ACME = ("ACME-MEM", "ACME-SECRET", "acme", "i@a.com", "m@a.com", jid, sid)
     try:
-        probes = [("GET", f"/v1/projects/p1/jobs/{jid}"), ("GET", f"/v1/projects/p1/jobs/{jid}/events"), ("POST", f"/v1/projects/p1/jobs/{jid}/cancel"), ("POST", f"/v1/projects/p1/jobs/{jid}/retry"), ("POST", f"/v1/projects/p1/jobs/{jid}/approve"),
+        probes = [("GET", f"/v1/projects/p1/jobs/{jid}"), ("GET", f"/v1/projects/p1/jobs/{jid}/events"), ("GET", f"/v1/projects/p1/jobs/{jid}/timings"), ("POST", f"/v1/projects/p1/jobs/{jid}/cancel"), ("POST", f"/v1/projects/p1/jobs/{jid}/retry"), ("POST", f"/v1/projects/p1/jobs/{jid}/approve"),
                   ("POST", f"/v1/projects/p1/schedules/{sid}/disable"), ("GET", "/v1/projects/p1/memory/project/k"), ("DELETE", f"/v1/keys/{kid}"), ("POST", f"/v1/keys/{kid}/rotate"),
                   ("PUT", f"/v1/members/{uid}"), ("DELETE", f"/v1/members/{uid}"), ("POST", f"/v1/members/{uid}/reset-password"), ("DELETE", f"/v1/invites/{inv['id']}"),
                   ("POST", f"/v1/workers/{wk['worker']}/revoke"), ("POST", f"/v1/workers/{wk['worker']}/drain"), ("DELETE", "/v1/secrets/sec"), ("POST", "/v1/hosted/h-x/stop")]

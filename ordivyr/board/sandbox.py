@@ -133,7 +133,7 @@ class Broker:
         self.ctx, self.job, self.gw = ctx, job, gateway; self.sock = socket.socket(socket.AF_UNIX); self.sock.bind(str(sockpath)); os.chmod(sockpath, 0o600); self.sock.listen(4); self.sock.settimeout(0.3)
         self._slots = threading.BoundedSemaphore(8)
         self._spend_lock = threading.Lock(); self._usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "cost_usd": 0.0}; self.started = time.time(); self._has_paid = False
-        self.final = None; self.err = None; self.stop = False; self.thread = threading.Thread(target=self._serve, daemon=True); self.thread.start()
+        self.final = None; self.err = None; self.stop = False; self._gate = None; self.thread = threading.Thread(target=self._serve, daemon=True); self.thread.start()
     def _serve(self):
         while not self.stop:
             try: c, _ = self.sock.accept()
@@ -203,6 +203,14 @@ class Broker:
                     except Exception: self.err = ("uncertain", "provider outcome or durable reservation could not be reconciled")
                 return {"gwerr": {"code": e.code, "msg": str(e), "retryable": e.retryable, "endpoint": e.endpoint}}
             return {"ok": {"text": r.text, "tool_calls": r.tool_calls, "usage": r.usage, "cost_usd": r.cost_usd, "model": r.model, "endpoint": r.endpoint, "latency_s": r.latency_s, "finish": r.finish}}
+        if op == "gate":
+            from . import gate as G
+            from .. import durable as D
+            with self._spend_lock:
+                if self._gate is None: self._gate = G.for_ctx(ctx, self.job)
+                if self._gate is None: return {"ok": None}
+                try: return {"ok": self._gate.check(str(m["name"]), m.get("args"))}
+                except D.NeedsApproval as e: self.err = ("hold", str(e)); return {"hold": str(e)}
         if op == "step": ctx.write({"op": "output", "tool": str(m["name"])[:60], "args": m.get("args"), "output": str(m.get("out"))[:2000]}); return {"ok": True}
         if op == "board":
             name = m["name"]
@@ -270,6 +278,7 @@ def board_handler_sandboxed(ctx, mem_mb=1024):
             tail = (bd / "stderr").read_text("utf-8", "replace")[-600:]; raise D.Transient(f"runtime_unavailable: sandbox exited rc={p.returncode} without a result: {tail}")
         if broker.err:
             kind, e = broker.err
+            if kind == "hold": raise D.NeedsApproval(str(e))
             if kind == "fatal": raise D.Fatal(str(e))
             if kind == "uncertain": raise D.NeedsApproval(f"cap_exceeded: unresolved provider spend requires operator reconciliation: {e}")
             raise RA.map_gateway_error(e["code"], e["msg"], e["retryable"])
